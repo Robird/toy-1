@@ -10,7 +10,7 @@ import sys
 import array
 
 # 初始化
-pygame.mixer.pre_init(44100, -16, 1, 512)
+pygame.mixer.pre_init(44100, -16, 2, 512)
 pygame.init()
 
 # 屏幕设置
@@ -36,6 +36,12 @@ COLORS = [
     (50, 205, 50),     # 绿
     (255, 69, 0),      # 橙红
 ]
+
+# 节拍常量（与 BGM 生成保持一致）
+BEAT_DUR = 0.28       # 每拍秒数
+BEATS_PER_LOOP = 48   # BGM 一轮总拍数 (小星星完整一遍)
+FPS = 60
+CATCH_Y = HEIGHT - 70 # 接星星的 Y 坐标
 
 # 字体
 try:
@@ -82,9 +88,12 @@ def _make_samples(freq, duration, volume=0.3, wave="sine", fade_out=True, fade_i
     return samples
 
 def make_sound(samples_list):
-    """从采样列表创建 pygame.mixer.Sound"""
-    raw = array.array('h', samples_list)
-    sound = pygame.mixer.Sound(buffer=raw)
+    """从采样列表创建 pygame.mixer.Sound（立体声）"""
+    mono = array.array('h', samples_list)
+    stereo = array.array('h', [0]) * (len(mono) * 2)
+    stereo[0::2] = mono  # 左声道
+    stereo[1::2] = mono  # 右声道
+    sound = pygame.mixer.Sound(buffer=stereo)
     return sound
 
 def generate_catch_sound():
@@ -295,15 +304,15 @@ class Particle:
 
 # ===== 星星类 =====
 class Star:
-    def __init__(self):
-        self.reset()
+    def __init__(self, speed=None):
+        self.reset(speed)
     
-    def reset(self):
+    def reset(self, speed=None):
         self.x = random.randint(40, WIDTH - 40)
         self.y = random.randint(-100, -20)
         self.size = random.randint(15, 30)
         self.color = random.choice(COLORS)
-        self.speed = random.uniform(1.5, 3.5)
+        self.speed = speed if speed is not None else random.uniform(1.5, 3.5)
         self.wobble = random.uniform(0, math.pi * 2)
         self.wobble_speed = random.uniform(0.02, 0.06)
         self.rotation = 0
@@ -343,7 +352,7 @@ class BgStar:
 def main():
     # 篮子属性
     basket_x = WIDTH // 2
-    basket_y = HEIGHT - 70
+    basket_y = CATCH_Y
     basket_width = 100
     basket_height = 40
     
@@ -353,10 +362,13 @@ def main():
     max_missed = 1000
     game_over = False
     
-    # 星星列表
-    stars = [Star() for _ in range(3)]
-    spawn_timer = 0
-    spawn_interval = 60  # 帧
+    # 星星列表（由节拍系统生成，不再预生成）
+    stars = []
+    
+    # 节拍追踪
+    bgm_start_ticks = pygame.time.get_ticks()
+    last_beat_int = -1
+    beat_flash = 0.0  # 0~1，用于节拍脉冲视觉效果
     
     # 背景星星
     bg_stars = [BgStar() for _ in range(80)]
@@ -392,9 +404,13 @@ def main():
                     score = 0
                     missed = 0
                     game_over = False
-                    stars = [Star() for _ in range(3)]
+                    stars = []
                     particles = []
                     score_popups = []
+                    # 重置节拍追踪
+                    bgm_start_ticks = pygame.time.get_ticks()
+                    last_beat_int = -1
+                    beat_flash = 0.0
                     sfx_channel.play(snd_restart)
                     bgm_channel.play(snd_bgm, loops=-1)
                     bgm_channel.set_volume(0.7)
@@ -406,13 +422,33 @@ def main():
             basket_x += (mouse_x - basket_x) * 0.15
             basket_x = max(basket_width // 2, min(WIDTH - basket_width // 2, basket_x))
             
-            # 生成新星星
-            spawn_timer += 1
-            if spawn_timer >= spawn_interval:
-                spawn_timer = 0
-                stars.append(Star())
-                # 随着分数增加，加速生成
-                spawn_interval = max(20, 60 - score // 5)
+            # ===== 节拍同步生成星星 =====
+            elapsed_ms = pygame.time.get_ticks() - bgm_start_ticks
+            current_beat = elapsed_ms / (BEAT_DUR * 1000)
+            current_beat_int = int(current_beat)
+            
+            if current_beat_int > last_beat_int:
+                last_beat_int = current_beat_int
+                beat_flash = 1.0  # 触发节拍视觉脉冲
+                
+                # 在这一拍生成星星？
+                # 随分数提高，生成概率增大（更多星星，更热闹）
+                spawn_chance = min(0.80, 0.40 + score * 0.008)
+                # 前6拍保证生成（开局不冷场）
+                if current_beat_int <= 6 or random.random() < spawn_chance:
+                    # 星星将在 travel_beats 拍后到达篮子（整数拍 → 到达必在拍上！）
+                    travel_beats = random.randint(12, 24)
+                    # 难度提升：分数越高，飞行时间越短（速度越快）
+                    travel_beats = max(8, travel_beats - score // 12)
+                    
+                    spawn_y = random.randint(-100, -20)
+                    distance = CATCH_Y - spawn_y
+                    travel_frames = travel_beats * BEAT_DUR * FPS
+                    speed = distance / travel_frames
+                    
+                    star = Star(speed=speed)
+                    star.y = spawn_y
+                    stars.append(star)
             
             # 更新星星
             for star in stars[:]:
@@ -454,6 +490,9 @@ def main():
                 score_popups[i] = (text, x, y - 1.5, timer - 1, color)
             score_popups = [(t, x, y, timer, c) for t, x, y, timer, c in score_popups if timer > 0]
         
+        # 节拍脉冲衰减（game over 时也要衰减，否则最后一帧冻住）
+        beat_flash = max(0.0, beat_flash - 0.06)
+        
         # ===== 绘制 =====
         # 渐变背景（深蓝到深紫）
         for y in range(HEIGHT):
@@ -476,8 +515,16 @@ def main():
         for p in particles:
             p.draw(screen)
         
-        # 篮子
-        draw_basket(screen, int(basket_x), basket_y, basket_width, basket_height)
+        # 节拍脉冲光效（接收区闪光线）
+        if beat_flash > 0:
+            glow_surf = pygame.Surface((WIDTH, 16), pygame.SRCALPHA)
+            alpha = int(beat_flash * 130)
+            glow_surf.fill((255, 255, 200, alpha))
+            screen.blit(glow_surf, (0, basket_y - 8))
+        
+        # 篮子（节拍弹跳）
+        basket_draw_y = basket_y - int(beat_flash * 5)
+        draw_basket(screen, int(basket_x), basket_draw_y, basket_width, basket_height)
         
         # 得分弹出
         for text, x, y, timer, color in score_popups:
