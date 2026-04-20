@@ -10,6 +10,7 @@ import pygame
 import sys
 import random
 import math
+import array
 
 # ──────────────────────────────────────
 # 常量
@@ -59,6 +60,50 @@ GUIDE_COLOR     = (210, 210, 200)
 TEXT_COLOR       = (60,  60,  60)
 OVERLAY_COLOR   = (0,   0,   0,  140)
 WHITE           = (255, 255, 255)
+
+
+# ──────────────────────────────────────
+# 音效合成（纯代码生成，无需外部文件）
+# ──────────────────────────────────────
+def _generate_tone(freq, duration_ms, volume=0.3, fade=True, sample_rate=44100):
+    """合成一段正弦波音调，返回 pygame.mixer.Sound"""
+    n = int(sample_rate * duration_ms / 1000)
+    buf = array.array('h')          # signed 16-bit
+    mv = int(32767 * volume)
+    dur_s = duration_ms / 1000
+    for i in range(n):
+        t = i / sample_rate
+        env = max(0.0, 1.0 - t / dur_s) if fade else 1.0
+        val = int(mv * env * math.sin(2 * math.pi * freq * t))
+        buf.append(val)   # L
+        buf.append(val)   # R
+    return pygame.mixer.Sound(buffer=buf)
+
+
+def _generate_merge_sound(level):
+    """合并音效：双音叮，等级越高音调越高"""
+    base = 420 + level * 80
+    s1 = _generate_tone(base, 80, volume=0.35)
+    s2 = _generate_tone(base * 1.5, 120, volume=0.30)
+    # 把两段拼在一起
+    buf = array.array('h')
+    buf.frombytes(s1.get_raw())
+    buf.frombytes(s2.get_raw())
+    return pygame.mixer.Sound(buffer=buf)
+
+
+def _generate_drop_sound():
+    """投放音效：短促低沉"""
+    return _generate_tone(220, 60, volume=0.18)
+
+
+def _generate_gameover_sound():
+    """游戏结束：下行三连音"""
+    parts = array.array('h')
+    for freq in (440, 370, 294):
+        s = _generate_tone(freq, 180, volume=0.30)
+        parts.frombytes(s.get_raw())
+    return pygame.mixer.Sound(buffer=parts)
 
 
 # ──────────────────────────────────────
@@ -225,6 +270,16 @@ class Game:
         self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
         pygame.display.set_caption("合成大西瓜  Suika Game")
         self.clock = pygame.time.Clock()
+
+        # 鼠标锁定在窗口内
+        pygame.event.set_grab(True)
+        pygame.mouse.set_visible(True)
+
+        # 预生成音效
+        self.snd_merge = {lv: _generate_merge_sound(lv) for lv in range(2, MAX_LEVEL + 1)}
+        self.snd_drop = _generate_drop_sound()
+        self.snd_gameover = _generate_gameover_sound()
+
         self.reset()
 
     def reset(self):
@@ -262,6 +317,7 @@ class Game:
         ball = Ball(self.spawn_x + x_jitter, SPAWN_Y, self.current_level, self.frame)
         ball.vx = random.uniform(-0.3, 0.3)
         self.balls.append(ball)
+        self.snd_drop.play()
         self.current_level = self.next_level
         self.next_level = random.randint(1, SPAWN_MAX_LEVEL)
         self.can_drop = False
@@ -322,6 +378,9 @@ class Game:
                 b1.merged = True
                 b2.merged = True
                 self.score += BALL_CONFIG[new_level][3]
+                # 合并音效
+                if new_level in self.snd_merge:
+                    self.snd_merge[new_level].play()
                 if new_level > self.max_level_reached:
                     self.max_level_reached = new_level
                 # 粒子特效
@@ -340,6 +399,7 @@ class Game:
                 b.settled_above_danger += 1
                 if b.settled_above_danger > GAME_OVER_GRACE:
                     self.game_over = True
+                    self.snd_gameover.play()
                     break
             else:
                 b.settled_above_danger = 0
@@ -450,6 +510,12 @@ class Game:
         while True:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
+                    pygame.event.set_grab(False)
+                    pygame.quit()
+                    sys.exit()
+
+                elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    pygame.event.set_grab(False)
                     pygame.quit()
                     sys.exit()
 
@@ -506,5 +572,6 @@ class Game:
 # ──────────────────────────────────────
 if __name__ == "__main__":
     pygame.init()
+    pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
     game = Game()
     game.run()
