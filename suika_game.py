@@ -11,16 +11,24 @@ import sys
 import random
 import math
 import array
+import pymunk
 
 # ──────────────────────────────────────
 # 常量
 # ──────────────────────────────────────
 WIDTH, HEIGHT = 480, 750
 FPS = 60
-GRAVITY = 0.35
-DAMPING = 0.985
-RESTITUTION = 0.25
-FLOOR_FRICTION = 0.92
+GRAVITY = 1260.0
+SPACE_DAMPING = 0.92
+SPACE_ITERATIONS = 30
+PHYSICS_STEPS_PER_FRAME = 3
+PHYSICS_DT = 1.0 / (FPS * PHYSICS_STEPS_PER_FRAME)
+BALL_ELASTICITY = 0.08
+BALL_FRICTION = 0.9
+WALL_ELASTICITY = 0.0
+WALL_FRICTION = 1.1
+MERGE_DISTANCE_SLOP = 0.5
+RESTING_SPEED_SQ = 900.0
 
 WALL_THICKNESS = 12
 WALL_LEFT = WALL_THICKNESS
@@ -31,8 +39,6 @@ SPAWN_Y = 70            # 投放点高度
 MOVE_SPEED = 6
 DROP_COOLDOWN_FRAMES = 25
 GAME_OVER_GRACE = 90    # 球超过危险线后的宽限帧数
-
-COLLISION_ITERATIONS = 8
 
 # 球的等级配置: level -> (radius, color, name, score)
 BALL_CONFIG = {
@@ -110,14 +116,10 @@ def _generate_gameover_sound():
 # Ball 类
 # ──────────────────────────────────────
 class Ball:
-    __slots__ = ("x", "y", "vx", "vy", "level", "radius", "color",
+    __slots__ = ("body", "shape", "level", "radius", "color",
                  "merged", "drop_frame", "settled_above_danger")
 
-    def __init__(self, x, y, level, drop_frame=0):
-        self.x = float(x)
-        self.y = float(y)
-        self.vx = 0.0
-        self.vy = 0.0
+    def __init__(self, space, x, y, level, drop_frame=0):
         self.level = level
         cfg = BALL_CONFIG[level]
         self.radius = cfg[0]
@@ -125,30 +127,49 @@ class Ball:
         self.merged = False
         self.drop_frame = drop_frame
         self.settled_above_danger = 0
+        mass = max(1.0, (self.radius * self.radius) / 180.0)
+        moment = pymunk.moment_for_circle(mass, 0, self.radius)
+        self.body = pymunk.Body(mass, moment)
+        self.body.position = (float(x), float(y))
+        self.shape = pymunk.Circle(self.body, self.radius)
+        self.shape.elasticity = BALL_ELASTICITY
+        self.shape.friction = BALL_FRICTION
+        space.add(self.body, self.shape)
 
-    # ---------- 物理更新 ----------
-    def update(self):
-        self.vy += GRAVITY
-        self.vx *= DAMPING
+    @property
+    def x(self):
+        return float(self.body.position.x)
 
-        self.x += self.vx
-        self.y += self.vy
+    @x.setter
+    def x(self, value):
+        self.body.position = (float(value), self.body.position.y)
 
-        # 左右墙壁
-        if self.x - self.radius < WALL_LEFT:
-            self.x = WALL_LEFT + self.radius
-            self.vx = abs(self.vx) * RESTITUTION
-        elif self.x + self.radius > WALL_RIGHT:
-            self.x = WALL_RIGHT - self.radius
-            self.vx = -abs(self.vx) * RESTITUTION
+    @property
+    def y(self):
+        return float(self.body.position.y)
 
-        # 地板
-        if self.y + self.radius > FLOOR_Y:
-            self.y = FLOOR_Y - self.radius
-            self.vy = -abs(self.vy) * RESTITUTION
-            if abs(self.vy) < 0.8:
-                self.vy = 0.0
-            self.vx *= FLOOR_FRICTION
+    @y.setter
+    def y(self, value):
+        self.body.position = (self.body.position.x, float(value))
+
+    @property
+    def vx(self):
+        return float(self.body.velocity.x)
+
+    @vx.setter
+    def vx(self, value):
+        self.body.velocity = (float(value), self.body.velocity.y)
+
+    @property
+    def vy(self):
+        return float(self.body.velocity.y)
+
+    @vy.setter
+    def vy(self, value):
+        self.body.velocity = (self.body.velocity.x, float(value))
+
+    def remove_from_space(self, space):
+        space.remove(self.body, self.shape)
 
     # ---------- 绘制 ----------
     def draw(self, surface, font):
@@ -174,60 +195,8 @@ class Ball:
 
     @property
     def speed_sq(self):
-        return self.vx * self.vx + self.vy * self.vy
-
-
-# ──────────────────────────────────────
-# 碰撞检测 & 响应
-# ──────────────────────────────────────
-def collide_pair(b1, b2):
-    """返回 (是否碰撞, 距离, dx, dy)"""
-    dx = b2.x - b1.x
-    dy = b2.y - b1.y
-    dist_sq = dx * dx + dy * dy
-    rsum = b1.radius + b2.radius
-    if dist_sq < rsum * rsum:
-        dist = math.sqrt(dist_sq) if dist_sq > 0 else 0.01
-        return True, dist, dx, dy
-    return False, 0, 0, 0
-
-
-def resolve_bounce(b1, b2, dist, dx, dy):
-    """弹性碰撞响应"""
-    if dist < 0.01:
-        dist = 0.01
-        dx, dy = 0.01, 0.0
-
-    nx = dx / dist
-    ny = dy / dist
-    overlap = (b1.radius + b2.radius) - dist
-
-    # 近乎完美纵向堆叠时注入横向微扰，让上面的球滑落
-    if abs(nx) < 0.08 and overlap > 0:
-        nudge = random.choice([-1, 1]) * random.uniform(0.3, 0.8)
-        b1.vx += nudge
-        b2.vx -= nudge * 0.5
-
-    # 按质量比（半径²）分配位移
-    m1 = b1.radius * b1.radius
-    m2 = b2.radius * b2.radius
-    total = m1 + m2
-    b1.x -= nx * overlap * (m2 / total)
-    b1.y -= ny * overlap * (m2 / total)
-    b2.x += nx * overlap * (m1 / total)
-    b2.y += ny * overlap * (m1 / total)
-
-    # 相对速度投影
-    dvx = b1.vx - b2.vx
-    dvy = b1.vy - b2.vy
-    dvn = dvx * nx + dvy * ny
-
-    if dvn > 0:
-        j = dvn * (1 + RESTITUTION) / (1.0 / m1 + 1.0 / m2)
-        b1.vx -= j * nx / m1
-        b1.vy -= j * ny / m1
-        b2.vx += j * nx / m2
-        b2.vy += j * ny / m2
+        vx, vy = self.body.velocity
+        return float(vx * vx + vy * vy)
 
 
 # ──────────────────────────────────────
@@ -283,6 +252,7 @@ class Game:
         self.reset()
 
     def reset(self):
+        self._setup_space()
         self.balls: list[Ball] = []
         self.particles: list[MergeParticle] = []
         self.score = 0
@@ -308,14 +278,40 @@ class Game:
             self.font_small = pygame.font.SysFont(None, 22)
             self.font_ball  = pygame.font.SysFont(None, 24)
 
+    def _setup_space(self):
+        self.space = pymunk.Space()
+        self.space.gravity = (0.0, GRAVITY)
+        self.space.damping = SPACE_DAMPING
+        self.space.iterations = SPACE_ITERATIONS
+        self.space.sleep_time_threshold = 0.4
+        self.space.idle_speed_threshold = 18.0
+        self.space.collision_slop = 0.5
+
+        walls = [
+            pymunk.Segment(self.space.static_body,
+                           (WALL_LEFT, DANGER_Y*1.25),
+                           (WALL_LEFT, FLOOR_Y), WALL_THICKNESS / 2),
+            pymunk.Segment(self.space.static_body,
+                           (WALL_RIGHT, DANGER_Y*1.25),
+                           (WALL_RIGHT, FLOOR_Y), WALL_THICKNESS / 2),
+            pymunk.Segment(self.space.static_body,
+                           (WALL_LEFT, FLOOR_Y),
+                           (WALL_RIGHT, FLOOR_Y), WALL_THICKNESS / 2),
+        ]
+        for wall in walls:
+            wall.elasticity = WALL_ELASTICITY
+            wall.friction = WALL_FRICTION
+        self.space.add(*walls)
+
     # ---------- 投放 ----------
     def drop_ball(self):
         if not self.can_drop or self.game_over:
             return
         # 投放时加随机微小扰动，避免完美纵向堆叠
-        x_jitter = random.uniform(-1.5, 1.5)
-        ball = Ball(self.spawn_x + x_jitter, SPAWN_Y, self.current_level, self.frame)
-        ball.vx = random.uniform(-0.3, 0.3)
+        x_jitter = random.uniform(-1.0, 1.0)
+        ball = Ball(self.space, self.spawn_x + x_jitter, SPAWN_Y,
+                    self.current_level, self.frame)
+        ball.vx = random.uniform(-1.0, 1.0)
         self.balls.append(ball)
         self.snd_drop.play()
         self.current_level = self.next_level
@@ -338,64 +334,17 @@ class Game:
             if self.drop_cooldown <= 0:
                 self.can_drop = True
 
-        # 物理
-        for b in self.balls:
-            b.update()
+        for _ in range(PHYSICS_STEPS_PER_FRAME):
+            self.space.step(PHYSICS_DT)
 
-        # 碰撞 & 合并
-        for _it in range(COLLISION_ITERATIONS):
-            merge_pairs = []
-            n = len(self.balls)
-            for i in range(n):
-                b1 = self.balls[i]
-                if b1.merged:
-                    continue
-                for j in range(i + 1, n):
-                    b2 = self.balls[j]
-                    if b2.merged:
-                        continue
-                    hit, dist, dx, dy = collide_pair(b1, b2)
-                    if not hit:
-                        continue
-                    if b1.level == b2.level and b1.level < MAX_LEVEL:
-                        merge_pairs.append((i, j))
-                    else:
-                        resolve_bounce(b1, b2, dist, dx, dy)
-
-            # 处理合并
-            for i, j in merge_pairs:
-                b1 = self.balls[i]
-                b2 = self.balls[j]
-                if b1.merged or b2.merged:
-                    continue
-                new_level = b1.level + 1
-                nx = (b1.x + b2.x) / 2
-                ny = (b1.y + b2.y) / 2
-                new_ball = Ball(nx, ny, new_level, self.frame)
-                # 给新球一个轻微弹跳
-                new_ball.vy = -2.0
-                self.balls.append(new_ball)
-                b1.merged = True
-                b2.merged = True
-                self.score += BALL_CONFIG[new_level][3]
-                # 合并音效
-                if new_level in self.snd_merge:
-                    self.snd_merge[new_level].play()
-                if new_level > self.max_level_reached:
-                    self.max_level_reached = new_level
-                # 粒子特效
-                for _ in range(10):
-                    self.particles.append(
-                        MergeParticle(nx, ny, BALL_CONFIG[new_level][1]))
-
-            self.balls = [b for b in self.balls if not b.merged]
+        self._handle_merges()
 
         # 游戏结束检测
         for b in self.balls:
             # 投放后至少 60 帧才判定
             if self.frame - b.drop_frame < 60:
                 continue
-            if b.y - b.radius < DANGER_Y and b.speed_sq < 2.0:
+            if b.y - b.radius < DANGER_Y and b.speed_sq < RESTING_SPEED_SQ:
                 b.settled_above_danger += 1
                 if b.settled_above_danger > GAME_OVER_GRACE:
                     self.game_over = True
@@ -411,6 +360,57 @@ class Game:
         for p in self.particles:
             p.update()
         self.particles = [p for p in self.particles if p.life > 0]
+
+    def _handle_merges(self):
+        while True:
+            merged_any = False
+            n = len(self.balls)
+            for i in range(n):
+                b1 = self.balls[i]
+                for j in range(i + 1, n):
+                    b2 = self.balls[j]
+                    if not self._can_merge(b1, b2):
+                        continue
+                    self._merge_pair(b1, b2)
+                    merged_any = True
+                    break
+                if merged_any:
+                    break
+            if not merged_any:
+                return
+
+    def _can_merge(self, b1, b2):
+        if b1.level != b2.level or b1.level >= MAX_LEVEL:
+            return False
+        dx = b2.x - b1.x
+        dy = b2.y - b1.y
+        rsum = b1.radius + b2.radius + MERGE_DISTANCE_SLOP
+        return dx * dx + dy * dy <= rsum * rsum
+
+    def _merge_pair(self, b1, b2):
+        new_level = b1.level + 1
+        nx = (b1.x + b2.x) / 2.0
+        ny = (b1.y + b2.y) / 2.0
+        vx = (b1.vx + b2.vx) * 0.35
+        vy = min(b1.vy, b2.vy) - 120.0
+
+        b1.remove_from_space(self.space)
+        b2.remove_from_space(self.space)
+        self.balls.remove(b1)
+        self.balls.remove(b2)
+
+        new_ball = Ball(self.space, nx, ny, new_level, self.frame)
+        new_ball.body.velocity = (vx, vy)
+        self.balls.append(new_ball)
+
+        self.score += BALL_CONFIG[new_level][3]
+        if new_level in self.snd_merge:
+            self.snd_merge[new_level].play()
+        if new_level > self.max_level_reached:
+            self.max_level_reached = new_level
+        for _ in range(10):
+            self.particles.append(
+                MergeParticle(nx, ny, BALL_CONFIG[new_level][1]))
 
     # ---------- 绘制 ----------
     def draw(self):
