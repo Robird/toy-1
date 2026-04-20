@@ -18,16 +18,65 @@ import pymunk
 # ──────────────────────────────────────
 WIDTH, HEIGHT = 480, 750
 FPS = 60
+
+# 物理世界的重力加速度，单位近似为“像素/秒²”。
+# 调大：下落更快，碰撞更重，更容易压实底部堆叠，但也会增加合并后的小幅震荡。
+# 调小：整体更轻、更飘，堆叠压力变小，容器里会更容易出现松散悬空感。
 GRAVITY = 1260.0
+
+# 空间阻尼，会在每次 step 时对所有动态刚体的速度做统一衰减。
+# 1.0 表示几乎不额外耗能；越小表示空气阻力/能量损失越明显。
+# 调大：球会滚得更久、更活跃。
+# 调小：球更快停稳，抖动更容易收敛，但也可能显得“发黏”。
 SPACE_DAMPING = 0.92
+
+# 约束求解迭代次数。Pymunk/Chipmunk 会在每个物理步内多次迭代接触约束，
+# 用来处理“球不能互相穿透”“球不能穿墙”“摩擦如何生效”等问题。
+# 调大：堆叠更稳、穿插更少，但 CPU 开销更高。
+# 调小：性能更好，但多球堆叠时更容易轻微下陷或抖动。
 SPACE_ITERATIONS = 30
+
+# 每帧渲染里拆成多少个物理子步。
+# 这比“每帧只 step 一次”更稳定，因为每次位移更短，碰撞更容易被及时处理。
+# 调大：高速接触更稳定，穿透风险更低，但计算量线性上升。
+# 调小：性能更省，但快速碰撞和密集堆叠更容易不稳。
 PHYSICS_STEPS_PER_FRAME = 3
+
+# 单个物理子步的 dt，和上面的子步数配套使用。
+# 这里固定为 1 / (FPS * 子步数)，属于典型 fixed timestep 做法，
+# 好处是同一套参数在不同机器上的行为更一致，手感也更容易调。
 PHYSICS_DT = 1.0 / (FPS * PHYSICS_STEPS_PER_FRAME)
-BALL_ELASTICITY = 0.08
-BALL_FRICTION = 0.9
-WALL_ELASTICITY = 0.0
-WALL_FRICTION = 1.1
+
+# 球与球、球与墙接触时的弹性系数。
+# 越接近 1 越“弹”，越接近 0 越“闷”。
+# Suika 这类堆叠合并游戏通常会用较小值，避免球来回弹跳导致局面不稳定。
+BALL_ELASTICITY = 0.01
+
+# 球表面的摩擦系数。
+# 调大：球之间更不容易横向滑开，堆叠更“抓地”。
+# 调小：球更容易滚动和滑落，画面更活跃，但塔状结构更难稳定。
+BALL_FRICTION = 0.8
+
+# 静态墙体和地板的弹性系数。
+# 这里单独留出来，是为了以后如果想做“更弹的边墙”或“更软的地板”时可单独调。
+WALL_ELASTICITY = 0.01
+
+# 墙和地板的摩擦系数。
+# 调大：落地后的横向速度更快被吃掉，球会更快停稳。
+# 调小：球更容易在底部滚来滚去，手感会更滑。
+WALL_FRICTION = 0.8
+
+# 合并判定的额外容差，单位是像素。
+# 两个同等级球的中心距离只要小于“半径和 + 这个容差”，就允许合并。
+# 它不是物理参数，而是玩法参数：用来补偿离散步进带来的微小间隙，
+# 避免明明已经贴在一起、视觉上应当合并，却因为数值误差没有触发。
 MERGE_DISTANCE_SLOP = 0.5
+
+# “基本静止”速度阈值的平方，用于危险线判定。
+# 只有球已经足够慢，才会被视为“真正卡在危险线附近”，从而累计 game over 宽限帧。
+# 之所以存平方值，是为了避免每帧开平方。
+# 调大：更容易把慢速晃动中的球视为“已停稳”。
+# 调小：必须几乎完全静止才算稳定，判定会更严格。
 RESTING_SPEED_SQ = 900.0
 
 WALL_THICKNESS = 12
@@ -39,6 +88,16 @@ SPAWN_Y = 70            # 投放点高度
 MOVE_SPEED = 6
 DROP_COOLDOWN_FRAMES = 25
 GAME_OVER_GRACE = 90    # 球超过危险线后的宽限帧数
+CONTAINER_TOP = DANGER_Y - 10
+
+# 释放点的额外横向安全边距。
+# 即使球半径刚好允许贴边投放，也给它预留一点额外空间，
+# 避免抖动、容差和投放微扰让新球在进入容器时擦到侧墙。
+DROP_SIDE_MARGIN = 2.0
+
+# 投放时保留轻微横向随机扰动，避免“完美垂直落柱”。
+# 实际生成时会再次经过夹紧，因此不会把球抖进墙里。
+DROP_X_JITTER = 1.0
 
 # 球的等级配置: level -> (radius, color, name, score)
 BALL_CONFIG = {
@@ -111,6 +170,8 @@ def _generate_gameover_sound():
         parts.frombytes(s.get_raw())
     return pygame.mixer.Sound(buffer=parts)
 
+def level_to_str(level:int):
+    return str(1<<(level-1))
 
 # ──────────────────────────────────────
 # Ball 类
@@ -127,6 +188,10 @@ class Ball:
         self.merged = False
         self.drop_frame = drop_frame
         self.settled_above_danger = 0
+
+        # 这里用半径²近似质量，让大球明显比小球“重”，
+        # 但又不按真实体积 r³ 增长得那么夸张，便于维持游戏手感。
+        # 除以 180 只是把数值缩回到适合当前重力和尺寸范围的量级。
         mass = max(1.0, (self.radius * self.radius) / 180.0)
         moment = pymunk.moment_for_circle(mass, 0, self.radius)
         self.body = pymunk.Body(mass, moment)
@@ -190,7 +255,7 @@ class Ball:
         pygame.draw.circle(surface, WHITE, (ix, iy), r, 2)
 
         # 等级数字
-        txt = font.render(str(self.level), True, WHITE)
+        txt = font.render(level_to_str(self.level), True, WHITE)
         surface.blit(txt, txt.get_rect(center=(ix, iy)))
 
     @property
@@ -265,6 +330,7 @@ class Game:
         self.next_level = random.randint(1, SPAWN_MAX_LEVEL)
         self.can_drop = True
         self.drop_cooldown = 0
+        self._refresh_spawn_x()
 
         # 字体（尝试中文字体，回退默认）
         try:
@@ -283,39 +349,70 @@ class Game:
         self.space.gravity = (0.0, GRAVITY)
         self.space.damping = SPACE_DAMPING
         self.space.iterations = SPACE_ITERATIONS
-        self.space.sleep_time_threshold = 0.4
-        self.space.idle_speed_threshold = 18.0
+
+        # 刚体在低速稳定一段时间后会自动 sleep，不再继续参与求解。
+        # 这是消除“看起来停住了却还在微抖”的关键机制之一。
+        # sleep_time_threshold：低速持续多久后允许睡眠。
+        # idle_speed_threshold：多慢才算“低速”。
+        self.space.sleep_time_threshold = 0.8
+        self.space.idle_speed_threshold = 8.0
+
+        # 接触容差（penetration slop）。
+        # 求解器允许极小的重叠存在，而不是每帧都强行修正到完全零重叠。
+        # 这样能显著减少堆叠时的高频抖动，是成熟物理引擎常见做法。
+        # 调大：更稳，但视觉上可能出现极轻微“软接触”。
+        # 调小：更刚硬，但更容易因为过度修正而抖。
         self.space.collision_slop = 0.5
 
+        wall_radius = WALL_THICKNESS / 2
         walls = [
             pymunk.Segment(self.space.static_body,
-                           (WALL_LEFT, DANGER_Y*1.25),
-                           (WALL_LEFT, FLOOR_Y), WALL_THICKNESS / 2),
+                           (wall_radius, CONTAINER_TOP + wall_radius),
+                           (wall_radius, HEIGHT - wall_radius), wall_radius),
             pymunk.Segment(self.space.static_body,
-                           (WALL_RIGHT, DANGER_Y*1.25),
-                           (WALL_RIGHT, FLOOR_Y), WALL_THICKNESS / 2),
+                           (WIDTH - wall_radius, CONTAINER_TOP + wall_radius),
+                           (WIDTH - wall_radius, HEIGHT - wall_radius), wall_radius),
             pymunk.Segment(self.space.static_body,
-                           (WALL_LEFT, FLOOR_Y),
-                           (WALL_RIGHT, FLOOR_Y), WALL_THICKNESS / 2),
+                           (WALL_LEFT, HEIGHT - wall_radius),
+                           (WALL_RIGHT, HEIGHT - wall_radius), wall_radius),
         ]
         for wall in walls:
             wall.elasticity = WALL_ELASTICITY
             wall.friction = WALL_FRICTION
         self.space.add(*walls)
 
+    def _spawn_limits(self, level=None, extra_margin=0.0):
+        if level is None:
+            level = self.current_level
+        radius = BALL_CONFIG[level][0]
+        margin = radius + DROP_SIDE_MARGIN + extra_margin
+        return WALL_LEFT + margin, WALL_RIGHT - margin
+
+    def _clamp_spawn_x(self, x, level=None, extra_margin=0.0):
+        left, right = self._spawn_limits(level, extra_margin)
+        return max(left, min(right, x))
+
+    def _refresh_spawn_x(self):
+        self.spawn_x = self._clamp_spawn_x(self.spawn_x)
+
     # ---------- 投放 ----------
     def drop_ball(self):
         if not self.can_drop or self.game_over:
             return
-        # 投放时加随机微小扰动，避免完美纵向堆叠
-        x_jitter = random.uniform(-1.0, 1.0)
-        ball = Ball(self.space, self.spawn_x + x_jitter, SPAWN_Y,
+        self._refresh_spawn_x()
+
+        # 投放时加随机微小扰动，避免完美纵向堆叠。
+        # 抖动后仍会重新夹紧，保证新球不会因为抖动贴进侧墙。
+        x_jitter = random.uniform(-DROP_X_JITTER, DROP_X_JITTER)
+        drop_x = self._clamp_spawn_x(self.spawn_x + x_jitter, self.current_level)
+        ball = Ball(self.space, drop_x, SPAWN_Y,
                     self.current_level, self.frame)
         ball.vx = random.uniform(-1.0, 1.0)
         self.balls.append(ball)
         self.snd_drop.play()
         self.current_level = self.next_level
         self.next_level = random.randint(1, SPAWN_MAX_LEVEL)
+        self._refresh_spawn_x()
         self.can_drop = False
         self.drop_cooldown = DROP_COOLDOWN_FRAMES
 
@@ -418,10 +515,10 @@ class Game:
 
         # 容器壁
         pygame.draw.rect(self.screen, WALL_COLOR,
-                         (0, DANGER_Y - 10, WALL_LEFT, HEIGHT - DANGER_Y + 10))
+                         (0, CONTAINER_TOP, WALL_LEFT, HEIGHT - CONTAINER_TOP))
         pygame.draw.rect(self.screen, WALL_COLOR,
-                         (WALL_RIGHT, DANGER_Y - 10,
-                          WIDTH - WALL_RIGHT, HEIGHT - DANGER_Y + 10))
+                         (WALL_RIGHT, CONTAINER_TOP,
+                          WIDTH - WALL_RIGHT, HEIGHT - CONTAINER_TOP))
         pygame.draw.rect(self.screen, WALL_COLOR,
                          (0, FLOOR_Y, WIDTH, HEIGHT - FLOOR_Y))
 
@@ -479,7 +576,7 @@ class Game:
                            (int(cx) - hl_off, int(cy) - hl_off), hl_r)
         pygame.draw.circle(self.screen, WHITE, (int(cx), int(cy)), r, 2)
         if scale >= 0.8:
-            txt = self.font_ball.render(str(level), True, WHITE)
+            txt = self.font_ball.render(level_to_str(level), True, WHITE)
             self.screen.blit(txt, txt.get_rect(center=(int(cx), int(cy))))
 
     def _draw_game_over(self):
@@ -528,10 +625,8 @@ class Game:
                 elif event.type == pygame.MOUSEMOTION:
                     if not self.game_over:
                         use_mouse = True
-                        r = BALL_CONFIG[self.current_level][0]
                         mx = event.pos[0]
-                        self.spawn_x = max(WALL_LEFT + r,
-                                           min(WALL_RIGHT - r, mx))
+                        self.spawn_x = self._clamp_spawn_x(mx)
 
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
@@ -540,27 +635,21 @@ class Game:
             # 连续按键（方向键）
             if not self.game_over and not use_mouse:
                 keys = pygame.key.get_pressed()
-                r = BALL_CONFIG[self.current_level][0]
                 if keys[pygame.K_LEFT]:
-                    self.spawn_x = max(WALL_LEFT + r,
-                                       self.spawn_x - MOVE_SPEED)
+                    self.spawn_x = self._clamp_spawn_x(self.spawn_x - MOVE_SPEED)
                     use_mouse = False
                 if keys[pygame.K_RIGHT]:
-                    self.spawn_x = min(WALL_RIGHT - r,
-                                       self.spawn_x + MOVE_SPEED)
+                    self.spawn_x = self._clamp_spawn_x(self.spawn_x + MOVE_SPEED)
                     use_mouse = False
             elif not self.game_over:
                 # 鼠标模式下仍允许键盘微调
                 keys = pygame.key.get_pressed()
-                r = BALL_CONFIG[self.current_level][0]
                 if keys[pygame.K_LEFT] or keys[pygame.K_RIGHT]:
                     use_mouse = False
                     if keys[pygame.K_LEFT]:
-                        self.spawn_x = max(WALL_LEFT + r,
-                                           self.spawn_x - MOVE_SPEED)
+                        self.spawn_x = self._clamp_spawn_x(self.spawn_x - MOVE_SPEED)
                     if keys[pygame.K_RIGHT]:
-                        self.spawn_x = min(WALL_RIGHT - r,
-                                           self.spawn_x + MOVE_SPEED)
+                        self.spawn_x = self._clamp_spawn_x(self.spawn_x + MOVE_SPEED)
 
             self.update()
             self.draw()
