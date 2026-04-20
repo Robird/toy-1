@@ -170,6 +170,75 @@ def _generate_gameover_sound():
         parts.frombytes(s.get_raw())
     return pygame.mixer.Sound(buffer=parts)
 
+
+def _generate_bgm(sample_rate=44100):
+    """合成一段 chiptune 风格循环 BGM（约 8 秒），返回 pygame.mixer.Sound"""
+    bpm = 140
+    beat = 60.0 / bpm            # 秒/拍
+    note_dur = beat * 0.5        # 每音符时长（八分音符）
+
+    # C 大调音符频率表
+    NOTE = {
+        'C3': 130.81, 'D3': 146.83, 'E3': 164.81, 'F3': 174.61,
+        'G3': 196.00, 'A3': 220.00, 'B3': 246.94,
+        'C4': 261.63, 'D4': 293.66, 'E4': 329.63, 'F4': 349.23,
+        'G4': 392.00, 'A4': 440.00, 'B4': 493.88,
+        'C5': 523.25, 'D5': 587.33, 'E5': 659.25,
+        'R': 0,  # 休止符
+    }
+
+    # 主旋律（欢快跳跃感），每个元素 = 一个八分音符
+    melody = [
+        'E4', 'G4', 'C5', 'B4', 'A4', 'G4', 'E4', 'R',
+        'D4', 'F4', 'A4', 'G4', 'F4', 'E4', 'D4', 'R',
+        'C4', 'E4', 'G4', 'A4', 'B4', 'C5', 'B4', 'A4',
+        'G4', 'E4', 'D4', 'E4', 'C4', 'R',  'C4', 'R',
+    ]
+
+    # 低音 bass line（每个音持续两个八分音符节拍）
+    bass = [
+        'C3', 'C3', 'G3', 'G3', 'A3', 'A3', 'E3', 'E3',
+        'F3', 'F3', 'C3', 'C3', 'G3', 'G3', 'C3', 'C3',
+        'C3', 'C3', 'E3', 'E3', 'F3', 'F3', 'G3', 'G3',
+        'A3', 'A3', 'F3', 'F3', 'G3', 'G3', 'C3', 'C3',
+    ]
+
+    total_notes = len(melody)
+    samples_per_note = int(sample_rate * note_dur)
+    total_samples = samples_per_note * total_notes
+
+    buf = array.array('h')  # stereo 16-bit
+
+    for idx in range(total_notes):
+        mel_freq = NOTE[melody[idx]]
+        bas_freq = NOTE[bass[idx]]
+
+        for i in range(samples_per_note):
+            t = i / sample_rate
+            frac = i / samples_per_note  # 0..1 在本音符内的进度
+
+            # 音量包络：快速起音 + 缓慢衰减，给 chiptune 弹性感
+            env = max(0.0, 1.0 - frac * 0.6)
+
+            # 旋律：方波近似（基频 + 3次谐波），音量较小
+            mel = 0.0
+            if mel_freq > 0:
+                mel = (math.sin(2 * math.pi * mel_freq * t)
+                       + 0.33 * math.sin(2 * math.pi * mel_freq * 3 * t))
+                mel *= env * 0.12
+
+            # Bass：纯正弦低音，稍大音量给厚度
+            bas = 0.0
+            if bas_freq > 0:
+                bas = math.sin(2 * math.pi * bas_freq * t) * 0.10
+
+            val = int(32767 * max(-1.0, min(1.0, mel + bas)))
+            buf.append(val)
+            buf.append(val)
+
+    return pygame.mixer.Sound(buffer=buf)
+
+
 def level_to_str(level:int):
     return str(1<<(level-1))
 
@@ -314,6 +383,12 @@ class Game:
         self.snd_drop = _generate_drop_sound()
         self.snd_gameover = _generate_gameover_sound()
 
+        # BGM
+        self.bgm = _generate_bgm()
+        self.bgm_channel = pygame.mixer.Channel(7)  # 专用通道
+        self.bgm_channel.set_volume(0.18)
+        self.bgm_channel.play(self.bgm, loops=-1)
+
         self.reset()
 
     def reset(self):
@@ -446,6 +521,7 @@ class Game:
                 if b.settled_above_danger > GAME_OVER_GRACE:
                     self.game_over = True
                     self.snd_gameover.play()
+                    self.bgm_channel.set_volume(0.06)  # Game Over 时压低 BGM
                     break
             else:
                 b.settled_above_danger = 0
@@ -621,6 +697,7 @@ class Game:
                         self.drop_ball()
                     elif event.key == pygame.K_r and self.game_over:
                         self.reset()
+                        self.bgm_channel.set_volume(0.18)  # 重开时恢复 BGM 音量
 
                 elif event.type == pygame.MOUSEMOTION:
                     if not self.game_over:
