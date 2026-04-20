@@ -359,7 +359,7 @@ def main():
     # 游戏状态
     score = 0
     missed = 0
-    max_missed = 1000
+    max_missed = 100
     game_over = False
     
     # 星星列表（由节拍系统生成，不再预生成）
@@ -437,7 +437,8 @@ def main():
                 # 前6拍保证生成（开局不冷场）
                 if current_beat_int <= 6 or random.random() < spawn_chance:
                     # 星星将在 travel_beats 拍后到达篮子（整数拍 → 到达必在拍上！）
-                    travel_beats = random.randint(12, 24)
+                    # travel_beats = random.randint(12, 24)
+                    travel_beats = random.randint(22, 24)
                     # 难度提升：分数越高，飞行时间越短（速度越快）
                     travel_beats = max(8, travel_beats - score // 12)
                     

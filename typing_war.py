@@ -18,17 +18,28 @@ pygame.init()
 WIDTH, HEIGHT = 900, 640
 FPS = 60
 
-# 键位设定（QWERTY 一行，10 个键）
+# 字符 → pygame 键码 映射（A-Z + 0-9）
+CHAR_TO_CODE = {chr(c): getattr(pygame, f"K_{chr(c).lower()}") for c in range(ord('A'), ord('Z') + 1)}
+CHAR_TO_CODE.update({str(d): getattr(pygame, f"K_{d}") for d in range(10)})
+
+def make_key_codes(chars):
+    """将字符序列（字符串或列表）转换为 {pygame_key_code: 索引} 字典，用于关卡键位配置。
+    示例: make_key_codes("FGHJ") → {K_f: 0, K_g: 1, K_h: 2, K_j: 3}
+    """
+    return {CHAR_TO_CODE[ch.upper()]: i for i, ch in enumerate(chars)}
+
+# 键位设定 —— 只需修改 KEYS 即可切换关卡键位
+# 示例: list("FJ"), list("FGHJ"), list("ASDFGHJKL"), list("QWERTYUIOP")
 # KEYS = list("QWERTYUIOP")
-# KEY_CODES = {
-#     pygame.K_q: 0, pygame.K_w: 1, pygame.K_e: 2, pygame.K_r: 3, pygame.K_t: 4,
-#     pygame.K_y: 5, pygame.K_u: 6, pygame.K_i: 7, pygame.K_o: 8, pygame.K_p: 9,
-# }
-KEYS = list("ASDFGHJKL")
-KEY_CODES = {
-    pygame.K_a: 0, pygame.K_s: 1, pygame.K_d: 2, pygame.K_f: 3, pygame.K_g: 4,
-    pygame.K_h: 5, pygame.K_j: 6, pygame.K_k: 7, pygame.K_l: 8
-}
+# KEYS = list("FGHJ")
+KEYS = list("FJ")
+# KEYS = list("FG")
+# KEYS = list("F")
+# KEYS = list("A")
+# KEYS = list("R")
+
+KEY_CODES = make_key_codes(KEYS)
+
 N_COLS = len(KEYS)
 
 # 布局
