@@ -8,13 +8,13 @@ import pygame
 import random
 import math
 import sys
-import array
 
+from audio_utils import Timbre, concat_samples, generate_samples, make_sound, mix_samples, notes_to_samples
+from audio_runtime import AudioRuntime, init_pygame_audio
 from font_utils import load_font
 
 # ===== 初始化 =====
-pygame.mixer.pre_init(44100, -16, 2, 512)
-pygame.init()
+init_pygame_audio()
 
 # ===== 常量 =====
 WIDTH, HEIGHT = 900, 640
@@ -94,78 +94,67 @@ font_bullet = load_font(20, "consolas", fallback_size=26, bold=True)
 
 
 # ===== 音频生成 =====
-SAMPLE_RATE = 44100
-
-def _samples(freq, dur, vol=0.25, wave="sine", fade=True):
-    n = int(SAMPLE_RATE * dur)
-    out = []
-    for i in range(n):
-        t = i / SAMPLE_RATE
-        if wave == "sine":
-            v = math.sin(2 * math.pi * freq * t)
-        elif wave == "triangle":
-            v = 2 * abs(2 * (t * freq - math.floor(t * freq + 0.5))) - 1
-        elif wave == "square":
-            v = (1.0 if math.sin(2 * math.pi * freq * t) >= 0 else -1.0) * 0.4
-        else:
-            v = math.sin(2 * math.pi * freq * t)
-        if i < int(n * 0.05):
-            v *= i / max(1, int(n * 0.05))
-        if fade and i > int(n * 0.5):
-            v *= 1.0 - (i - int(n * 0.5)) / (n - int(n * 0.5))
-        out.append(int(v * vol * 32767))
-    return out
-
-def _make_sound(s):
-    mono = array.array('h', s)
-    stereo = array.array('h', [0]) * (len(mono) * 2)
-    stereo[0::2] = mono
-    stereo[1::2] = mono
-    return pygame.mixer.Sound(buffer=stereo)
-
 print("正在生成音效...")
 
 # 我方发射 - 清脆短促
-snd_shoot = _make_sound(_samples(700, 0.05, vol=0.15) + _samples(900, 0.04, vol=0.12))
+snd_shoot = make_sound(
+    concat_samples(
+        generate_samples(700, 0.05, volume=0.15),
+        generate_samples(900, 0.04, volume=0.12),
+    )
+)
 # 碰撞抵消 - 叮一声
-snd_clash = _make_sound(
-    _samples(1200, 0.04, vol=0.18) + _samples(1500, 0.06, vol=0.14)
+snd_clash = make_sound(
+    concat_samples(
+        generate_samples(1200, 0.04, volume=0.18),
+        generate_samples(1500, 0.06, volume=0.14),
+    )
 )
 # 敌方被击中 - 沉闷爆破
-snd_enemy_hit = _make_sound(
-    _samples(400, 0.08, vol=0.20, wave="triangle") +
-    _samples(600, 0.06, vol=0.15)
+snd_enemy_hit = make_sound(
+    concat_samples(
+        generate_samples(400, 0.08, volume=0.20, timbre=Timbre.Triangle),
+        generate_samples(600, 0.06, volume=0.15),
+    )
 )
 # 我方被击中 - 低沉警告
-snd_player_hit = _make_sound(
-    _samples(200, 0.12, vol=0.22, wave="triangle") +
-    _samples(150, 0.15, vol=0.18, wave="triangle")
+snd_player_hit = make_sound(
+    concat_samples(
+        generate_samples(200, 0.12, volume=0.22, timbre=Timbre.Triangle),
+        generate_samples(150, 0.15, volume=0.18, timbre=Timbre.Triangle),
+    )
 )
 # 冷却中按键 - 闷响提示
-snd_cooldown = _make_sound(_samples(250, 0.06, vol=0.08, wave="square"))
+snd_cooldown = make_sound(generate_samples(250, 0.06, volume=0.08, timbre=Timbre.Square))
 # 胜利
-snd_win = _make_sound(
-    _samples(523, 0.12) + _samples(659, 0.12) + _samples(784, 0.12) +
-    _samples(1047, 0.25)
+snd_win = make_sound(
+    concat_samples(
+        generate_samples(523, 0.12),
+        generate_samples(659, 0.12),
+        generate_samples(784, 0.12),
+        generate_samples(1047, 0.25),
+    )
 )
 # 失败
-snd_lose = _make_sound(
-    _samples(400, 0.2, wave="triangle") + _samples(300, 0.2, wave="triangle") +
-    _samples(200, 0.3, wave="triangle")
+snd_lose = make_sound(
+    concat_samples(
+        generate_samples(400, 0.2, timbre=Timbre.Triangle),
+        generate_samples(300, 0.2, timbre=Timbre.Triangle),
+        generate_samples(200, 0.3, timbre=Timbre.Triangle),
+    )
 )
 # 重新开始
-snd_restart = _make_sound(
-    _samples(523, 0.08) + _samples(659, 0.08) + _samples(784, 0.08) +
-    _samples(1047, 0.15)
+snd_restart = make_sound(
+    concat_samples(
+        generate_samples(523, 0.08),
+        generate_samples(659, 0.08),
+        generate_samples(784, 0.08),
+        generate_samples(1047, 0.15),
+    )
 )
 
 # BGM - 紧张的进行曲风格
 def _gen_bgm():
-    NOTE = {
-        'C4': 262, 'D4': 294, 'E4': 330, 'F4': 349, 'G4': 392,
-        'A4': 440, 'Bb4': 466, 'B4': 494,
-        'C5': 523, 'D5': 587, 'E5': 659, 'R': 0,
-    }
     melody = [
         ('E4',1),('E4',0.5),('E4',0.5),('C4',1),('E4',1),
         ('G4',2),('R',1),('G4',1),
@@ -176,32 +165,21 @@ def _gen_bgm():
         ('C4',1),('D4',1),('B4',2),
     ]
     beat = 0.16
-    mel = []
-    for n, b in melody:
-        d = b * beat
-        if n == 'R' or NOTE.get(n, 0) == 0:
-            mel.extend([0] * int(SAMPLE_RATE * d))
-        else:
-            mel.extend(_samples(NOTE[n], d, vol=0.09, wave="sine"))
+    mel = notes_to_samples(melody, beat, volume=0.09, timbre=Timbre.Sine)
     bas_notes = [
         ('C4',2),('G4',2),('C4',2),('G4',2),
         ('C4',2),('E4',2),('G4',2),('C4',2),
         ('A4',2),('E4',2),('G4',2),('C4',2),
         ('F4',2),('C4',2),('G4',4),
     ]
-    bas = []
-    for n, b in bas_notes:
-        d = b * beat
-        if n == 'R' or NOTE.get(n, 0) == 0:
-            bas.extend([0] * int(SAMPLE_RATE * d))
-        else:
-            bas.extend(_samples(NOTE[n] // 2, d, vol=0.04, wave="triangle"))
-    mixed = []
-    for i in range(len(mel)):
-        m = mel[i]
-        bv = bas[i % len(bas)] if i < len(bas) else 0
-        mixed.append(max(-32767, min(32767, m + bv)))
-    return _make_sound(mixed)
+    bas = notes_to_samples(
+        bas_notes,
+        beat,
+        volume=0.04,
+        timbre=Timbre.Triangle,
+        freq_scale=0.5,
+    )
+    return make_sound(mix_samples(mel, bas))
 
 snd_bgm = _gen_bgm()
 print("音效就绪！")
@@ -476,12 +454,12 @@ def main():
     anim_tick = 0
 
     # 音频
-    bgm_ch = pygame.mixer.Channel(0)
-    sfx_ch = pygame.mixer.Channel(1)
-    sfx_ch2 = pygame.mixer.Channel(2)
-    sfx_ch3 = pygame.mixer.Channel(3)
-    bgm_ch.play(snd_bgm, loops=-1)
-    bgm_ch.set_volume(0.45)
+    audio = AudioRuntime(("bgm", "sfx", "sfx2", "sfx3"))
+    bgm_ch = audio.bgm_channel
+    sfx_ch = audio.channel("sfx")
+    sfx_ch2 = audio.channel("sfx2")
+    sfx_ch3 = audio.channel("sfx3")
+    audio.play_bgm(snd_bgm, volume=0.45)
 
     running = True
 
@@ -516,8 +494,7 @@ def main():
                     enemy_ai.reset()
                     frame_count = 0
                     sfx_ch.play(snd_restart)
-                    bgm_ch.play(snd_bgm, loops=-1)
-                    bgm_ch.set_volume(0.45)
+                    audio.restart_bgm()
 
                 elif event.key in KEY_CODES and not game_over and not game_won:
                     col = KEY_CODES[event.key]
@@ -599,7 +576,7 @@ def main():
                     )
                     if enemy_hp <= 0:
                         game_won = True
-                        bgm_ch.fadeout(800)
+                        audio.fadeout_bgm(800)
                         sfx_ch.play(snd_win)
 
             # === 敌方子弹到达底端 → 击中我方 ===
@@ -617,7 +594,7 @@ def main():
                     sfx_ch2.play(snd_player_hit)
                     if player_hp <= 0:
                         game_over = True
-                        bgm_ch.fadeout(800)
+                        audio.fadeout_bgm(800)
                         sfx_ch.play(snd_lose)
 
             # === 清理死亡子弹 ===

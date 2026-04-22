@@ -10,9 +10,10 @@ import pygame
 import sys
 import random
 import math
-import array
 import pymunk
 
+from audio_utils import Timbre, concat_samples, generate_samples, make_sound, mix_samples, notes_to_samples, synthesize_sound
+from audio_runtime import AudioRuntime, init_pygame_audio
 from font_utils import load_font
 
 # ──────────────────────────────────────
@@ -132,31 +133,27 @@ WHITE           = (255, 255, 255)
 # ──────────────────────────────────────
 # 音效合成（纯代码生成，无需外部文件）
 # ──────────────────────────────────────
-def _generate_tone(freq, duration_ms, volume=0.3, fade=True, sample_rate=44100):
+def _generate_tone(freq, duration_ms, volume=0.3, fade=True):
     """合成一段正弦波音调，返回 pygame.mixer.Sound"""
-    n = int(sample_rate * duration_ms / 1000)
-    buf = array.array('h')          # signed 16-bit
-    mv = int(32767 * volume)
-    dur_s = duration_ms / 1000
-    for i in range(n):
-        t = i / sample_rate
-        env = max(0.0, 1.0 - t / dur_s) if fade else 1.0
-        val = int(mv * env * math.sin(2 * math.pi * freq * t))
-        buf.append(val)   # L
-        buf.append(val)   # R
-    return pygame.mixer.Sound(buffer=buf)
+    return synthesize_sound(
+        freq,
+        duration_ms / 1000.0,
+        volume=volume,
+        timbre=Timbre.Sine,
+        fade_out=fade,
+        fade_out_start=0.0,
+    )
 
 
 def _generate_merge_sound(level):
     """合并音效：双音叮，等级越高音调越高"""
     base = 420 + level * 80
-    s1 = _generate_tone(base, 80, volume=0.35)
-    s2 = _generate_tone(base * 1.5, 120, volume=0.30)
-    # 把两段拼在一起
-    buf = array.array('h')
-    buf.frombytes(s1.get_raw())
-    buf.frombytes(s2.get_raw())
-    return pygame.mixer.Sound(buffer=buf)
+    return make_sound(
+        concat_samples(
+            generate_samples(base, 0.08, volume=0.35, fade_out_start=0.0),
+            generate_samples(base * 1.5, 0.12, volume=0.30, fade_out_start=0.0),
+        )
+    )
 
 
 def _generate_drop_sound():
@@ -166,28 +163,19 @@ def _generate_drop_sound():
 
 def _generate_gameover_sound():
     """游戏结束：下行三连音"""
-    parts = array.array('h')
-    for freq in (440, 370, 294):
-        s = _generate_tone(freq, 180, volume=0.30)
-        parts.frombytes(s.get_raw())
-    return pygame.mixer.Sound(buffer=parts)
+    return make_sound(
+        concat_samples(*[
+            generate_samples(freq, 0.18, volume=0.30, fade_out_start=0.0)
+            for freq in (440, 370, 294)
+        ])
+    )
 
 
-def _generate_bgm(sample_rate=44100):
+def _generate_bgm():
     """合成一段 chiptune 风格循环 BGM（约 8 秒），返回 pygame.mixer.Sound"""
     bpm = 140
     beat = 60.0 / bpm            # 秒/拍
     note_dur = beat * 0.5        # 每音符时长（八分音符）
-
-    # C 大调音符频率表
-    NOTE = {
-        'C3': 130.81, 'D3': 146.83, 'E3': 164.81, 'F3': 174.61,
-        'G3': 196.00, 'A3': 220.00, 'B3': 246.94,
-        'C4': 261.63, 'D4': 293.66, 'E4': 329.63, 'F4': 349.23,
-        'G4': 392.00, 'A4': 440.00, 'B4': 493.88,
-        'C5': 523.25, 'D5': 587.33, 'E5': 659.25,
-        'R': 0,  # 休止符
-    }
 
     # 主旋律（欢快跳跃感），每个元素 = 一个八分音符
     melody = [
@@ -205,39 +193,23 @@ def _generate_bgm(sample_rate=44100):
         'A3', 'A3', 'F3', 'F3', 'G3', 'G3', 'C3', 'C3',
     ]
 
-    total_notes = len(melody)
-    samples_per_note = int(sample_rate * note_dur)
-
-    buf = array.array('h')  # stereo 16-bit
-
-    for idx in range(total_notes):
-        mel_freq = NOTE[melody[idx]]
-        bas_freq = NOTE[bass[idx]]
-
-        for i in range(samples_per_note):
-            t = i / sample_rate
-            frac = i / samples_per_note  # 0..1 在本音符内的进度
-
-            # 音量包络：快速起音 + 缓慢衰减，给 chiptune 弹性感
-            env = max(0.0, 1.0 - frac * 0.6)
-
-            # 旋律：方波近似（基频 + 3次谐波），音量较小
-            mel = 0.0
-            if mel_freq > 0:
-                mel = (math.sin(2 * math.pi * mel_freq * t)
-                       + 0.33 * math.sin(2 * math.pi * mel_freq * 3 * t))
-                mel *= env * 0.12
-
-            # Bass：纯正弦低音，稍大音量给厚度
-            bas = 0.0
-            if bas_freq > 0:
-                bas = math.sin(2 * math.pi * bas_freq * t) * 0.10
-
-            val = int(32767 * max(-1.0, min(1.0, mel + bas)))
-            buf.append(val)
-            buf.append(val)
-
-    return pygame.mixer.Sound(buffer=buf)
+    melody_samples = notes_to_samples(
+        melody,
+        note_dur,
+        volume=0.12,
+        timbre=Timbre.Sine,
+        fade_out_start=0.0,
+        release_end=0.4,
+        harmonics=((1.0, 1.0), (3.0, 0.33)),
+    )
+    bass_samples = notes_to_samples(
+        bass,
+        note_dur,
+        volume=0.10,
+        timbre=Timbre.Sine,
+        fade_out=False,
+    )
+    return make_sound(mix_samples(melody_samples, bass_samples))
 
 
 def level_to_str(level:int):
@@ -384,9 +356,8 @@ class Game:
 
         # BGM
         self.bgm = _generate_bgm()
-        self.bgm_channel = pygame.mixer.Channel(7)  # 专用通道
-        self.bgm_channel.set_volume(0.18)
-        self.bgm_channel.play(self.bgm, loops=-1)
+        self.audio = AudioRuntime(total_channels=8)
+        self.audio.play_bgm(self.bgm, volume=0.18)
 
         self.reset()
 
@@ -513,7 +484,7 @@ class Game:
                 if b.settled_above_danger > GAME_OVER_GRACE:
                     self.game_over = True
                     self.snd_gameover.play()
-                    self.bgm_channel.set_volume(0.06)  # Game Over 时压低 BGM
+                    self.audio.set_bgm_volume(0.06)  # Game Over 时压低 BGM
                     break
             else:
                 b.settled_above_danger = 0
@@ -689,7 +660,7 @@ class Game:
                         self.drop_ball()
                     elif event.key == pygame.K_r and self.game_over:
                         self.reset()
-                        self.bgm_channel.set_volume(0.18)  # 重开时恢复 BGM 音量
+                        self.audio.set_bgm_volume(0.18)  # 重开时恢复 BGM 音量
 
                 elif event.type == pygame.MOUSEMOTION:
                     if not self.game_over:
@@ -729,7 +700,6 @@ class Game:
 # 入口
 # ──────────────────────────────────────
 if __name__ == "__main__":
-    pygame.init()
-    pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
+    init_pygame_audio()
     game = Game()
     game.run()

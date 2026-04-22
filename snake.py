@@ -7,13 +7,13 @@ import pygame
 import random
 import math
 import sys
-import array
 
+from audio_utils import Timbre, concat_samples, generate_samples, make_sound, mix_samples, notes_to_samples
+from audio_runtime import AudioRuntime, init_pygame_audio
 from font_utils import load_font
 
 # ===== 初始化 =====
-pygame.mixer.pre_init(44100, -16, 2, 512)
-pygame.init()
+init_pygame_audio()
 
 # 屏幕 & 网格
 CELL = 32          # 每格像素
@@ -57,66 +57,47 @@ font_small = load_font(20, "microsoftyahei", "simhei", "simsun", fallback_size=2
 font_emoji = load_font(24, "segoeuiemoji", fallback_size=30)
 
 # ===== 音频生成 =====
-SAMPLE_RATE = 44100
-
-def _samples(freq, dur, vol=0.25, wave="sine", fade=True):
-    n = int(SAMPLE_RATE * dur)
-    out = []
-    for i in range(n):
-        t = i / SAMPLE_RATE
-        if wave == "sine":
-            v = math.sin(2 * math.pi * freq * t)
-        elif wave == "triangle":
-            v = 2 * abs(2 * (t * freq - math.floor(t * freq + 0.5))) - 1
-        else:
-            v = math.sin(2 * math.pi * freq * t)
-        # 包络
-        if i < int(n * 0.05):
-            v *= i / max(1, int(n * 0.05))
-        if fade and i > int(n * 0.5):
-            v *= 1.0 - (i - int(n * 0.5)) / (n - int(n * 0.5))
-        out.append(int(v * vol * 32767))
-    return out
-
-def _make_sound(samples_list):
-    mono = array.array('h', samples_list)
-    stereo = array.array('h', [0]) * (len(mono) * 2)
-    stereo[0::2] = mono
-    stereo[1::2] = mono
-    return pygame.mixer.Sound(buffer=stereo)
-
 print("正在生成音效...")
 
 # 吃到水果 - 清脆上行
-snd_eat = _make_sound(
-    _samples(660, 0.06) + _samples(880, 0.06) + _samples(1100, 0.10)
+snd_eat = make_sound(
+    concat_samples(
+        generate_samples(660, 0.06),
+        generate_samples(880, 0.06),
+        generate_samples(1100, 0.10),
+    )
 )
 # 吃到特殊水果(🌟/🍇) - 更华丽
-snd_eat_special = _make_sound(
-    _samples(880, 0.05) + _samples(1100, 0.05) +
-    _samples(1320, 0.05) + _samples(1760, 0.12)
+snd_eat_special = make_sound(
+    concat_samples(
+        generate_samples(880, 0.05),
+        generate_samples(1100, 0.05),
+        generate_samples(1320, 0.05),
+        generate_samples(1760, 0.12),
+    )
 )
 # 转向 - 轻微咔嗒
-snd_turn = _make_sound(_samples(500, 0.03, vol=0.10))
+snd_turn = make_sound(generate_samples(500, 0.03, volume=0.10))
 # 撞墙/自己 - 低闷声
-snd_die = _make_sound(
-    _samples(300, 0.15, wave="triangle") +
-    _samples(200, 0.15, wave="triangle") +
-    _samples(130, 0.30, wave="triangle")
+snd_die = make_sound(
+    concat_samples(
+        generate_samples(300, 0.15, timbre=Timbre.Triangle),
+        generate_samples(200, 0.15, timbre=Timbre.Triangle),
+        generate_samples(130, 0.30, timbre=Timbre.Triangle),
+    )
 )
 # 重新开始
-snd_restart = _make_sound(
-    _samples(523, 0.08) + _samples(659, 0.08) +
-    _samples(784, 0.08) + _samples(1047, 0.15)
+snd_restart = make_sound(
+    concat_samples(
+        generate_samples(523, 0.08),
+        generate_samples(659, 0.08),
+        generate_samples(784, 0.08),
+        generate_samples(1047, 0.15),
+    )
 )
 
 # BGM: 简单欢快的循环小调 (~4秒)
 def _gen_bgm():
-    NOTE = {
-        'C4': 262, 'D4': 294, 'E4': 330, 'F4': 349,
-        'G4': 392, 'A4': 440, 'B4': 494,
-        'C5': 523, 'D5': 587, 'E5': 659, 'R': 0,
-    }
     melody = [
         ('E4',1),('E4',1),('F4',1),('G4',1),
         ('G4',1),('F4',1),('E4',1),('D4',1),
@@ -134,26 +115,15 @@ def _gen_bgm():
         ('C4',2),('C4',2),('C4',4),
     ]
     beat = 0.20
-    mel = []
-    for n, b in melody:
-        d = b * beat
-        if n == 'R' or NOTE[n] == 0:
-            mel.extend([0] * int(SAMPLE_RATE * d))
-        else:
-            mel.extend(_samples(NOTE[n], d, vol=0.10, wave="sine"))
-    bas = []
-    for n, b in bass:
-        d = b * beat
-        if n == 'R' or NOTE[n] == 0:
-            bas.extend([0] * int(SAMPLE_RATE * d))
-        else:
-            bas.extend(_samples(NOTE[n] // 2, d, vol=0.05, wave="triangle"))
-    mixed = []
-    for i in range(len(mel)):
-        m = mel[i]
-        bv = bas[i % len(bas)] if i < len(bas) else 0
-        mixed.append(max(-32767, min(32767, m + bv)))
-    return _make_sound(mixed)
+    mel = notes_to_samples(melody, beat, volume=0.10, timbre=Timbre.Sine)
+    bas = notes_to_samples(
+        bass,
+        beat,
+        volume=0.05,
+        timbre=Timbre.Triangle,
+        freq_scale=0.5,
+    )
+    return make_sound(mix_samples(mel, bas))
 
 snd_bgm = _gen_bgm()
 print("音效就绪！")
@@ -302,10 +272,10 @@ def main():
     snake_grow = 0  # 待生长的节数
 
     # 音频
-    bgm_ch = pygame.mixer.Channel(0)
-    sfx_ch = pygame.mixer.Channel(1)
-    bgm_ch.play(snd_bgm, loops=-1)
-    bgm_ch.set_volume(0.5)
+    audio = AudioRuntime(("bgm", "sfx"))
+    bgm_ch = audio.bgm_channel
+    sfx_ch = audio.channel("sfx")
+    audio.play_bgm(snd_bgm, volume=0.5)
 
     # 鼠标锁定
     pygame.event.set_grab(True)
@@ -348,8 +318,7 @@ def main():
                     eat_flash = 0.0
                     move_timer = 0.0
                     sfx_ch.play(snd_restart)
-                    bgm_ch.play(snd_bgm, loops=-1)
-                    bgm_ch.set_volume(0.5)
+                    audio.restart_bgm()
                 elif event.key in DIR_MAP and not game_over and not paused:
                     nd = DIR_MAP[event.key]
                     # 不能180度掉头
@@ -378,7 +347,7 @@ def main():
                 # 撞自己？
                 if (nx, ny) in set(snake[:-1]):
                     game_over = True
-                    bgm_ch.fadeout(500)
+                    audio.fadeout_bgm(500)
                     sfx_ch.play(snd_die)
                     high_score = max(high_score, score)
                     # 死亡粒子效果

@@ -7,13 +7,13 @@ import pygame
 import random
 import math
 import sys
-import array
 
+from audio_utils import Timbre, concat_samples, generate_samples, generate_sweep_samples, make_sound, mix_samples, notes_to_samples
+from audio_runtime import AudioRuntime, init_pygame_audio
 from font_utils import load_font
 
 # 初始化
-pygame.mixer.pre_init(44100, -16, 2, 512)
-pygame.init()
+init_pygame_audio()
 
 # 屏幕设置
 WIDTH, HEIGHT = 800, 600
@@ -53,95 +53,44 @@ font_small = load_font(24, "microsoftyahei", "simhei", "simsun", fallback_size=3
 clock = pygame.time.Clock()
 
 # ===== 音频生成 =====
-SAMPLE_RATE = 44100
-
-def _make_samples(freq, duration, volume=0.3, wave="sine", fade_out=True, fade_in=0.01):
-    """生成原始音频采样数据"""
-    n_samples = int(SAMPLE_RATE * duration)
-    samples = []
-    for i in range(n_samples):
-        t = i / SAMPLE_RATE
-        # 波形
-        if wave == "sine":
-            val = math.sin(2 * math.pi * freq * t)
-        elif wave == "square":
-            val = 1.0 if math.sin(2 * math.pi * freq * t) >= 0 else -1.0
-            val *= 0.4  # 方波音量小一点
-        elif wave == "triangle":
-            val = 2 * abs(2 * (t * freq - math.floor(t * freq + 0.5))) - 1
-        else:
-            val = math.sin(2 * math.pi * freq * t)
-        # 包络 - 淡入
-        fade_in_samples = int(SAMPLE_RATE * fade_in)
-        if i < fade_in_samples:
-            val *= i / fade_in_samples
-        # 包络 - 淡出
-        if fade_out:
-            fade_start = int(n_samples * 0.6)
-            if i > fade_start:
-                val *= 1.0 - (i - fade_start) / (n_samples - fade_start)
-        val *= volume
-        samples.append(int(val * 32767))
-    return samples
-
-def make_sound(samples_list):
-    """从采样列表创建 pygame.mixer.Sound（立体声）"""
-    mono = array.array('h', samples_list)
-    stereo = array.array('h', [0]) * (len(mono) * 2)
-    stereo[0::2] = mono  # 左声道
-    stereo[1::2] = mono  # 右声道
-    sound = pygame.mixer.Sound(buffer=stereo)
-    return sound
-
 def generate_catch_sound():
     """接住星星：欢快的上升叮咚声"""
-    samples = []
-    # 两个快速上升的音符
     notes = [(880, 0.06), (1175, 0.06), (1397, 0.1)]
-    for freq, dur in notes:
-        samples.extend(_make_samples(freq, dur, volume=0.25, wave="sine"))
-    return make_sound(samples)
+    return make_sound(
+        concat_samples(*[
+            generate_samples(freq, dur, volume=0.25, timbre=Timbre.Sine, fade_in=0.01, fade_out_start=0.6)
+            for freq, dur in notes
+        ])
+    )
 
 def generate_miss_sound():
     """漏掉星星：低沉的下降嗡声"""
-    samples = []
-    n_samples = int(SAMPLE_RATE * 0.25)
-    for i in range(n_samples):
-        t = i / SAMPLE_RATE
-        # 频率从300下降到150
-        freq = 300 - 150 * (i / n_samples)
-        val = math.sin(2 * math.pi * freq * t)
-        # 淡出
-        envelope = 1.0 - (i / n_samples) ** 0.5
-        val *= envelope * 0.2
-        samples.append(int(val * 32767))
-    return make_sound(samples)
+    return make_sound(
+        generate_sweep_samples(300, 150, 0.25, volume=0.2, decay_power=0.5)
+    )
 
 def generate_gameover_sound():
     """游戏结束：下行旋律"""
-    samples = []
     notes = [(523, 0.2), (466, 0.2), (392, 0.2), (349, 0.4)]
-    for freq, dur in notes:
-        samples.extend(_make_samples(freq, dur, volume=0.25, wave="triangle"))
-    return make_sound(samples)
+    return make_sound(
+        concat_samples(*[
+            generate_samples(freq, dur, volume=0.25, timbre=Timbre.Triangle, fade_in=0.01, fade_out_start=0.6)
+            for freq, dur in notes
+        ])
+    )
 
 def generate_restart_sound():
     """重新开始：上行小号角"""
-    samples = []
     notes = [(523, 0.1), (659, 0.1), (784, 0.1), (1047, 0.2)]
-    for freq, dur in notes:
-        samples.extend(_make_samples(freq, dur, volume=0.2, wave="sine"))
-    return make_sound(samples)
+    return make_sound(
+        concat_samples(*[
+            generate_samples(freq, dur, volume=0.2, timbre=Timbre.Sine, fade_in=0.01, fade_out_start=0.6)
+            for freq, dur in notes
+        ])
+    )
 
 def generate_bgm():
     """生成《小星星》完整旋律BGM (Twinkle Twinkle Little Star)"""
-    # C大调音符频率
-    NOTE = {
-        'C4': 262, 'D4': 294, 'E4': 330, 'F4': 349, 'G4': 392,
-        'A4': 440, 'B4': 494,
-        'C5': 523, 'D5': 587, 'E5': 659, 'F5': 698, 'G5': 784,
-        'A5': 880, 'R': 0,
-    }
     # 完整《小星星》旋律: 1155665 4433221 5544332 5544332 1155665 4433221
     # 用C5作为"1"，所以 1=C5 2=D5 3=E5 4=F5 5=G5 6=A5
     melody = [
@@ -180,37 +129,23 @@ def generate_bgm():
         ('F4', 2), ('C4', 2), ('G4', 2), ('C4', 2),
     ]
 
-    beat_dur = 0.28  # 每拍时长（秒），稍慢一些更像小星星的节奏
-
-    # 生成旋律
-    melody_samples = []
-    for note_name, beats in melody:
-        dur = beats * beat_dur
-        n = int(SAMPLE_RATE * dur)
-        if note_name == 'R' or NOTE[note_name] == 0:
-            melody_samples.extend([0] * n)
-        else:
-            melody_samples.extend(_make_samples(NOTE[note_name], dur, volume=0.13, wave="sine", fade_out=True, fade_in=0.008))
-
-    # 生成低音伴奏
-    bass_samples = []
-    for note_name, beats in bass_notes:
-        dur = beats * beat_dur
-        n = int(SAMPLE_RATE * dur)
-        if note_name == 'R' or NOTE[note_name] == 0:
-            bass_samples.extend([0] * n)
-        else:
-            bass_samples.extend(_make_samples(NOTE[note_name], dur, volume=0.06, wave="triangle", fade_out=True, fade_in=0.008))
-
-    # 混合旋律和伴奏
-    mixed = []
-    for i in range(len(melody_samples)):
-        m = melody_samples[i]
-        b = bass_samples[i % len(bass_samples)] if i < len(bass_samples) else 0
-        val = max(-32767, min(32767, m + b))
-        mixed.append(val)
-
-    return make_sound(mixed)
+    melody_samples = notes_to_samples(
+        melody,
+        BEAT_DUR,
+        volume=0.13,
+        timbre=Timbre.Sine,
+        fade_in=0.008,
+        fade_out_start=0.6,
+    )
+    bass_samples = notes_to_samples(
+        bass_notes,
+        BEAT_DUR,
+        volume=0.06,
+        timbre=Timbre.Triangle,
+        fade_in=0.008,
+        fade_out_start=0.6,
+    )
+    return make_sound(mix_samples(melody_samples, bass_samples))
 
 # 预生成所有音效
 print("正在生成音效...")
@@ -379,11 +314,11 @@ def main():
     running = True
     
     # 播放BGM（循环）
-    bgm_channel = pygame.mixer.Channel(0)
-    sfx_channel = pygame.mixer.Channel(1)
-    sfx_channel2 = pygame.mixer.Channel(2)
-    bgm_channel.play(snd_bgm, loops=-1)
-    bgm_channel.set_volume(0.7)
+    audio = AudioRuntime(("bgm", "sfx", "sfx2"))
+    bgm_channel = audio.bgm_channel
+    sfx_channel = audio.channel("sfx")
+    sfx_channel2 = audio.channel("sfx2")
+    audio.play_bgm(snd_bgm, volume=0.7)
 
     # 锁定鼠标在窗口内，小朋友不会把鼠标移出去啦！
     pygame.event.set_grab(True)
@@ -409,8 +344,7 @@ def main():
                     last_beat_int = -1
                     beat_flash = 0.0
                     sfx_channel.play(snd_restart)
-                    bgm_channel.play(snd_bgm, loops=-1)
-                    bgm_channel.set_volume(0.7)
+                    audio.restart_bgm()
         
         if not game_over:
             # 篮子跟随鼠标
@@ -474,7 +408,7 @@ def main():
                     stars.remove(star)
                     if missed >= max_missed:
                         game_over = True
-                        bgm_channel.fadeout(500)
+                        audio.fadeout_bgm(500)
                         sfx_channel.play(snd_gameover)
             
             # 更新粒子
