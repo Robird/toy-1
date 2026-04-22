@@ -207,7 +207,6 @@ def _generate_bgm(sample_rate=44100):
 
     total_notes = len(melody)
     samples_per_note = int(sample_rate * note_dur)
-    total_samples = samples_per_note * total_notes
 
     buf = array.array('h')  # stereo 16-bit
 
@@ -360,8 +359,6 @@ class MergeParticle:
 
     def draw(self, surface):
         if self.life > 0:
-            alpha = max(0, min(255, self.life * 12))
-            c = (*self.color[:3], alpha) if len(self.color) == 4 else (*self.color, alpha)
             # 简单方式：直接画圆
             pygame.draw.circle(surface, self.color[:3],
                                (int(self.x), int(self.y)), self.r)
