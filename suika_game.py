@@ -11,8 +11,9 @@ import sys
 import random
 import math
 import array
-import os
 import pymunk
+
+from font_utils import load_font
 
 # ──────────────────────────────────────
 # 常量
@@ -243,23 +244,6 @@ def _generate_bgm(sample_rate=44100):
 def level_to_str(level:int):
     return str(1<<(level-1))
 
-
-def _load_game_font(size, *font_names):
-    windows_dir = os.environ.get("WINDIR", r"C:\Windows")
-    fonts_dir = os.path.join(windows_dir, "Fonts")
-
-    for font_name in font_names:
-        if not font_name:
-            continue
-        font_path = os.path.join(fonts_dir, font_name)
-        if os.path.exists(font_path):
-            try:
-                return pygame.font.Font(font_path, size)
-            except Exception:
-                pass
-
-    return pygame.font.Font(None, size)
-
 # ──────────────────────────────────────
 # Ball 类
 # ──────────────────────────────────────
@@ -425,10 +409,10 @@ class Game:
         self.drop_cooldown = 0
         self._refresh_spawn_x()
 
-        self.font_large = _load_game_font(44, "simhei.ttf", "msyh.ttc", "simsun.ttc")
-        self.font_mid   = _load_game_font(28, "simhei.ttf", "msyh.ttc", "simsun.ttc")
-        self.font_small = _load_game_font(20, "simhei.ttf", "msyh.ttc", "simsun.ttc")
-        self.font_ball  = _load_game_font(22, "simhei.ttf", "msyh.ttc", "simsun.ttc")
+        self.font_large = load_font(44, "simhei", "microsoftyahei", "simsun", fallback_size=48)
+        self.font_mid   = load_font(28, "simhei", "microsoftyahei", "simsun", fallback_size=30)
+        self.font_small = load_font(20, "simhei", "microsoftyahei", "simsun", fallback_size=22)
+        self.font_ball  = load_font(22, "simhei", "microsoftyahei", "simsun", fallback_size=24)
 
     def _setup_space(self):
         self.space = pymunk.Space()

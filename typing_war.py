@@ -10,6 +10,8 @@ import math
 import sys
 import array
 
+from font_utils import load_font
+
 # ===== 初始化 =====
 pygame.mixer.pre_init(44100, -16, 2, 512)
 pygame.init()
@@ -84,18 +86,11 @@ pygame.display.set_caption("⌨️ 打字保卫战！")
 clock = pygame.time.Clock()
 
 # 字体
-try:
-    font_big    = pygame.font.SysFont("microsoftyahei", 42)
-    font_med    = pygame.font.SysFont("microsoftyahei", 26)
-    font_small  = pygame.font.SysFont("microsoftyahei", 18)
-    font_key    = pygame.font.SysFont("consolas", 22, bold=True)
-    font_bullet = pygame.font.SysFont("consolas", 20, bold=True)
-except Exception:
-    font_big    = pygame.font.Font(None, 50)
-    font_med    = pygame.font.Font(None, 32)
-    font_small  = pygame.font.Font(None, 24)
-    font_key    = pygame.font.Font(None, 28)
-    font_bullet = pygame.font.Font(None, 26)
+font_big    = load_font(42, "microsoftyahei", "simhei", "simsun", fallback_size=50)
+font_med    = load_font(26, "microsoftyahei", "simhei", "simsun", fallback_size=32)
+font_small  = load_font(18, "microsoftyahei", "simhei", "simsun", fallback_size=24)
+font_key    = load_font(22, "consolas", fallback_size=28, bold=True)
+font_bullet = load_font(20, "consolas", fallback_size=26, bold=True)
 
 
 # ===== 音频生成 =====

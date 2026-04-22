@@ -9,6 +9,8 @@ import math
 import sys
 import array
 
+from font_utils import load_font
+
 # ===== 初始化 =====
 pygame.mixer.pre_init(44100, -16, 2, 512)
 pygame.init()
@@ -49,16 +51,10 @@ FRUIT_TYPES = [
 ]
 
 # 字体
-try:
-    font_big   = pygame.font.SysFont("microsoftyahei", 44)
-    font_med   = pygame.font.SysFont("microsoftyahei", 28)
-    font_small = pygame.font.SysFont("microsoftyahei", 20)
-    font_emoji = pygame.font.SysFont("segoeUIEmoji", 24)
-except Exception:
-    font_big   = pygame.font.Font(None, 52)
-    font_med   = pygame.font.Font(None, 36)
-    font_small = pygame.font.Font(None, 26)
-    font_emoji = pygame.font.Font(None, 30)
+font_big   = load_font(44, "microsoftyahei", "simhei", "simsun", fallback_size=52)
+font_med   = load_font(28, "microsoftyahei", "simhei", "simsun", fallback_size=36)
+font_small = load_font(20, "microsoftyahei", "simhei", "simsun", fallback_size=26)
+font_emoji = load_font(24, "segoeuiemoji", fallback_size=30)
 
 # ===== 音频生成 =====
 SAMPLE_RATE = 44100

@@ -9,6 +9,8 @@ import math
 import sys
 import array
 
+from font_utils import load_font
+
 # 初始化
 pygame.mixer.pre_init(44100, -16, 2, 512)
 pygame.init()
@@ -44,14 +46,9 @@ FPS = 60
 CATCH_Y = HEIGHT - 70 # 接星星的 Y 坐标
 
 # 字体
-try:
-    font_big = pygame.font.SysFont("microsoftyahei", 48)
-    font_med = pygame.font.SysFont("microsoftyahei", 32)
-    font_small = pygame.font.SysFont("microsoftyahei", 24)
-except:
-    font_big = pygame.font.Font(None, 56)
-    font_med = pygame.font.Font(None, 40)
-    font_small = pygame.font.Font(None, 30)
+font_big = load_font(48, "microsoftyahei", "simhei", "simsun", fallback_size=56)
+font_med = load_font(32, "microsoftyahei", "simhei", "simsun", fallback_size=40)
+font_small = load_font(24, "microsoftyahei", "simhei", "simsun", fallback_size=30)
 
 clock = pygame.time.Clock()
 
