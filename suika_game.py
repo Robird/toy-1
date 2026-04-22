@@ -3,6 +3,10 @@
 --------------------------------------
 左右方向键 或 鼠标移动 —— 控制投放位置
 空格键 或 鼠标左键 —— 投放小球
+Tab 键 —— 拥有炸弹时切换到炸弹模式（再次按 Tab/右键 退出）
+  · 炸弹模式下左键点击将引爆任意球（不加分）
+  · 每累计 2000 分获得 1 枚炸弹，可叠加
+Esc —— 优先退出炸弹模式；非炸弹模式下退出游戏
 R 键 —— Game Over 后重新开始
 """
 
@@ -129,6 +133,30 @@ TEXT_COLOR       = (60,  60,  60)
 OVERLAY_COLOR   = (0,   0,   0,  140)
 WHITE           = (255, 255, 255)
 
+# ── 炸弹（Bomb）机制相关 ──
+# 每攒满这么多分，授予 1 枚炸弹。固定阈值，简单直观。
+BOMB_SCORE_THRESHOLD = 2000
+# 炸弹模式下屏幕内描边（警戒红）。
+BOMB_BORDER_COLOR = (220, 50, 50, 180)
+BOMB_BORDER_THICKNESS = 4
+# 鼠标准星与悬停高亮颜色。
+BOMB_AIM_COLOR = (255, 60, 60)
+# HUD 上炸弹图标/进度条颜色。
+BOMB_HUD_COLOR = (40, 40, 40)         # 炸弹主体
+BOMB_HUD_FUSE = (160, 110, 60)        # 引信
+BOMB_HUD_SPARK = (255, 210, 80)       # 引信火花 / 高亮
+BOMB_HUD_BAR = (220, 80, 60)          # 进度条填充色
+BOMB_HUD_DIM   = (200, 200, 200)
+# 刚获得炸弹时的闪烁颜色（金色，更像奖励）。
+BOMB_FLASH_COLOR = (240, 180, 30)
+# 爆炸火星颜色调色板（从该调色板随机抽取）。
+EXPLOSION_PALETTE = (
+    (255, 230, 120),
+    (255, 170, 50),
+    (255, 100, 30),
+    (220, 60, 40),
+)
+
 
 # ──────────────────────────────────────
 # 音效合成（纯代码生成，无需外部文件）
@@ -167,6 +195,38 @@ def _generate_gameover_sound():
         concat_samples(*[
             generate_samples(freq, 0.18, volume=0.30, fade_out_start=0.0)
             for freq in (440, 370, 294)
+        ])
+    )
+
+
+def _generate_pop_sound():
+    """爆炸音效：高频 burst + 低频下行“轰”尾巴。
+
+    分三段拼接：
+      1) 高频方波 burst——仿压力释放的裂口声；
+      2) 中频下行——过渡、填胸腔感；
+      3) 低频下行（Hollow）——轰鸣尾。
+    三段总时长 ≈230ms，足够重但不拖节奏。
+    """
+    return make_sound(
+        concat_samples(
+            generate_samples(900, 0.04, volume=0.32,
+                             timbre=Timbre.Square, fade_out_start=0.0),
+            generate_samples(360, 0.07, volume=0.28,
+                             timbre=Timbre.Square, fade_out_start=0.0),
+            generate_samples(120, 0.12, volume=0.30,
+                             timbre=Timbre.Hollow, fade_out_start=0.0),
+        )
+    )
+
+
+def _generate_charge_sound():
+    """获得炸弹：上行三连音，用 Hollow 增加金属“装填”质感。"""
+    return make_sound(
+        concat_samples(*[
+            generate_samples(freq, 0.10, volume=0.30,
+                             timbre=Timbre.Hollow, fade_out_start=0.0)
+            for freq in (523, 659, 880)
         ])
     )
 
@@ -337,6 +397,62 @@ class MergeParticle:
 
 
 # ──────────────────────────────────────
+# 爆炸动画（中心闪光 + 冲击波环）
+# ──────────────────────────────────────
+class Explosion:
+    """一次炸裂的视觉表现：中心白色闪光 + 向外扩散的偷环。
+
+    不走物理、不造伤害。升出在“帧计数 + 起始半径”两个变量上。
+    """
+    __slots__ = ("x", "y", "r0", "frame", "life")
+
+    LIFE = 18  # 总帧数（约 0.3 秒）
+
+    def __init__(self, x, y, r0):
+        self.x = float(x)
+        self.y = float(y)
+        self.r0 = float(r0)
+        self.frame = 0
+        self.life = self.LIFE
+
+    @property
+    def alive(self):
+        return self.frame < self.life
+
+    def update(self):
+        self.frame += 1
+
+    def draw(self, surface):
+        t = self.frame / self.life  # 0..1
+        if t >= 1.0:
+            return
+        # 中心闪光：前 1/3 为主，之后迅速消失
+        flash_a = max(0.0, 1.0 - t * 1.6)
+        if flash_a > 0:
+            flash_r = int(self.r0 * (0.4 + 0.7 * t))
+            flash = pygame.Surface((flash_r * 2 + 2, flash_r * 2 + 2),
+                                   pygame.SRCALPHA)
+            pygame.draw.circle(flash, (255, 240, 200, int(220 * flash_a)),
+                               (flash_r + 1, flash_r + 1), flash_r)
+            surface.blit(flash, (int(self.x) - flash_r - 1,
+                                 int(self.y) - flash_r - 1))
+        # 冲击波环：半径从 r0 扩到 ~2.2*r0，alpha 从高到低
+        ring_r = int(self.r0 * (1.0 + 1.2 * t))
+        ring_a = int(220 * (1.0 - t))
+        if ring_a > 0 and ring_r > 0:
+            ring = pygame.Surface((ring_r * 2 + 4, ring_r * 2 + 4),
+                                  pygame.SRCALPHA)
+            # 外浅内深，双环增加层次
+            pygame.draw.circle(ring, (255, 200, 80, ring_a),
+                               (ring_r + 2, ring_r + 2), ring_r, 3)
+            inner_r = max(1, ring_r - 5)
+            pygame.draw.circle(ring, (255, 90, 40, max(0, ring_a - 60)),
+                               (ring_r + 2, ring_r + 2), inner_r, 2)
+            surface.blit(ring, (int(self.x) - ring_r - 2,
+                                int(self.y) - ring_r - 2))
+
+
+# ──────────────────────────────────────
 # 主游戏类
 # ──────────────────────────────────────
 class Game:
@@ -353,6 +469,8 @@ class Game:
         self.snd_merge = {lv: _generate_merge_sound(lv) for lv in range(2, MAX_LEVEL + 1)}
         self.snd_drop = _generate_drop_sound()
         self.snd_gameover = _generate_gameover_sound()
+        self.snd_explode = _generate_pop_sound()
+        self.snd_bomb_ready = _generate_charge_sound()
 
         # BGM
         self.bgm = _generate_bgm()
@@ -376,6 +494,19 @@ class Game:
         self.can_drop = True
         self.drop_cooldown = 0
         self._refresh_spawn_x()
+
+        # ── 炸弹机制状态 ──
+        # bombs：剩余炸弹数（叠加）。
+        # score_for_next_bomb：下一枚炸弹发放阈值。
+        # bomb_mode：是否处于炸弹模式（投放被禁用）。
+        # bomb_flash：刚获得炸弹时的 HUD 闪烁帧数。
+        # explosions：炸裂冲击波动画列表。
+        self.bombs = 0
+        self.score_for_next_bomb = BOMB_SCORE_THRESHOLD
+        self.bomb_mode = False
+        self.bomb_flash = 0
+        self.explosions: list[Explosion] = []
+        self.mouse_pos = (WIDTH // 2, SPAWN_Y)
 
         self.font_large = load_font(44, "simhei", "microsoftyahei", "simsun", fallback_size=48)
         self.font_mid   = load_font(28, "simhei", "microsoftyahei", "simsun", fallback_size=30)
@@ -433,9 +564,60 @@ class Game:
     def _refresh_spawn_x(self):
         self.spawn_x = self._clamp_spawn_x(self.spawn_x)
 
+    # ---------- 炸弹机制 ----------
+    def _award_bombs_if_due(self):
+        """若分数跨过阈值则发放炸弹，支持一次跨多个阈值。"""
+        awarded = 0
+        while self.score >= self.score_for_next_bomb:
+            self.bombs += 1
+            self.score_for_next_bomb += BOMB_SCORE_THRESHOLD
+            awarded += 1
+        if awarded > 0:
+            self.bomb_flash = 45
+            self.snd_bomb_ready.play()
+
+    def _toggle_bomb_mode(self):
+        if self.game_over:
+            return
+        if self.bomb_mode:
+            self.bomb_mode = False
+        elif self.bombs > 0:
+            self.bomb_mode = True
+
+    def _exit_bomb_mode(self):
+        self.bomb_mode = False
+
+    def _ball_under_point(self, mx, my):
+        """返回点 (mx,my) 命中的最上层球；用渲染顺序的反序近似 z-order。"""
+        for b in reversed(self.balls):
+            dx = b.x - mx
+            dy = b.y - my
+            if dx * dx + dy * dy <= b.radius * b.radius:
+                return b
+        return None
+
+    def _detonate_at(self, mx, my):
+        if not self.bomb_mode or self.bombs <= 0 or self.game_over:
+            return
+        target = self._ball_under_point(mx, my)
+        if target is None:
+            return
+        # 炸裂火星：暂仅使用暑色调色板（脱离球本身的颜色，更像火星不是“碎末”）
+        for _ in range(16):
+            color = random.choice(EXPLOSION_PALETTE)
+            self.particles.append(MergeParticle(target.x, target.y, color))
+        # 中心闪光 + 冲击波环
+        self.explosions.append(Explosion(target.x, target.y, target.radius))
+        target.remove_from_space(self.space)
+        self.balls.remove(target)
+        self.snd_explode.play()
+        self.bombs -= 1
+        if self.bombs <= 0:
+            self.bomb_mode = False
+
     # ---------- 投放 ----------
     def drop_ball(self):
-        if not self.can_drop or self.game_over:
+        if not self.can_drop or self.game_over or self.bomb_mode:
             return
         self._refresh_spawn_x()
 
@@ -456,9 +638,16 @@ class Game:
 
     # ---------- 逻辑更新 ----------
     def update(self):
+        if self.bomb_flash > 0:
+            self.bomb_flash -= 1
         if self.game_over:
-            # 粒子继续更新
+            # 游戏结束时禁用炸弹：濒死救场过强，剩余炸弹也清零。
+            if self.bomb_mode:
+                self.bomb_mode = False
+            self.bombs = 0
+            # 粒子与爆炸动画继续更新
             self._update_particles()
+            self._update_explosions()
             return
 
         self.frame += 1
@@ -489,13 +678,19 @@ class Game:
             else:
                 b.settled_above_danger = 0
 
-        # 粒子
+        # 粒子 / 爆炸动画
         self._update_particles()
+        self._update_explosions()
 
     def _update_particles(self):
         for p in self.particles:
             p.update()
         self.particles = [p for p in self.particles if p.life > 0]
+
+    def _update_explosions(self):
+        for e in self.explosions:
+            e.update()
+        self.explosions = [e for e in self.explosions if e.alive]
 
     def _handle_merges(self):
         while True:
@@ -540,6 +735,7 @@ class Game:
         self.balls.append(new_ball)
 
         self.score += BALL_CONFIG[new_level][3]
+        self._award_bombs_if_due()
         if new_level in self.snd_merge:
             self.snd_merge[new_level].play()
         if new_level > self.max_level_reached:
@@ -566,8 +762,8 @@ class Game:
             pygame.draw.line(self.screen, DANGER_COLOR,
                              (x, DANGER_Y), (x + 8, DANGER_Y), 2)
 
-        # 引导线 & 待投放球
-        if self.can_drop and not self.game_over:
+        # 引导线 & 待投放球（炸弹模式下隐藏，避免和投放视觉混淆）
+        if self.can_drop and not self.game_over and not self.bomb_mode:
             pygame.draw.line(self.screen, GUIDE_COLOR,
                              (self.spawn_x, SPAWN_Y + BALL_CONFIG[self.current_level][0]),
                              (self.spawn_x, FLOOR_Y), 1)
@@ -588,6 +784,10 @@ class Game:
         for p in self.particles:
             p.draw(self.screen)
 
+        # 爆炸动画（画在粒子之上，让闪光/冲击波靠前）
+        for e in self.explosions:
+            e.draw(self.screen)
+
         # 分数 & 最高等级
         s1 = self.font_mid.render(f"Score: {self.score}", True, TEXT_COLOR)
         self.screen.blit(s1, (WALL_LEFT + 8, 8))
@@ -596,6 +796,13 @@ class Game:
             s2 = self.font_small.render(f"Max: Lv{self.max_level_reached} {name}",
                                         True, TEXT_COLOR)
             self.screen.blit(s2, (WALL_LEFT + 8, 42))
+
+        # 炸弹 HUD
+        self._draw_bomb_hud()
+
+        # 炸弹模式下的悬停高亮 + 顶部提示 + 屏幕边框
+        if self.bomb_mode:
+            self._draw_bomb_mode_overlay()
 
         # Game Over 覆盖层
         if self.game_over:
@@ -617,6 +824,121 @@ class Game:
         if scale >= 0.8:
             txt = self.font_ball.render(level_to_str(level), True, WHITE)
             self.screen.blit(txt, txt.get_rect(center=(int(cx), int(cy))))
+
+    def _draw_bomb_icon(self, cx, cy, radius=6, sparkle=False):
+        """手绘小炸弹：黑色圆体 + 棕色引信 + 高亮点（可选火花）。"""
+        cx, cy = int(cx), int(cy)
+        # 主体
+        pygame.draw.circle(self.screen, BOMB_HUD_COLOR, (cx, cy), radius)
+        # 高亮
+        hl_r = max(1, radius // 3)
+        pygame.draw.circle(self.screen, (110, 110, 110),
+                           (cx - radius // 3, cy - radius // 3), hl_r)
+        # 引信（左上斜出的短棒）
+        fuse_x1, fuse_y1 = cx - int(radius * 0.6), cy - int(radius * 0.9)
+        fuse_x2, fuse_y2 = cx - int(radius * 1.0), cy - int(radius * 1.7)
+        pygame.draw.line(self.screen, BOMB_HUD_FUSE,
+                         (fuse_x1, fuse_y1), (fuse_x2, fuse_y2), 2)
+        # 引信火花
+        if sparkle:
+            pygame.draw.circle(self.screen, BOMB_HUD_SPARK,
+                               (fuse_x2, fuse_y2), 3)
+            pygame.draw.circle(self.screen, (255, 255, 200),
+                               (fuse_x2, fuse_y2), 1)
+
+    def _draw_bomb_hud(self):
+        """HUD：剩余炸弹数 + 炸弹图标列 + 距下一枚进度条。"""
+        base_x = WALL_LEFT + 8
+        base_y = 70
+
+        # 闪烁：刚获得炸弹时文字变金色
+        if self.bomb_flash > 0 and (self.bomb_flash // 6) % 2 == 0:
+            text_color = BOMB_FLASH_COLOR
+        else:
+            text_color = TEXT_COLOR
+        label = self.font_small.render(f"Bombs: {self.bombs}", True, text_color)
+        self.screen.blit(label, (base_x, base_y))
+
+        # 炸弹图标（最多 5 个，超出用 +N）
+        icon_x = base_x + label.get_width() + 14
+        icon_y = base_y + label.get_height() // 2 + 1
+        max_icons = 5
+        shown = min(self.bombs, max_icons)
+        # 闪烁帧内，顶部那枚炸弹画火花，强化“快点交付”貃示
+        sparkle_first = self.bomb_flash > 0 or self.bomb_mode
+        for i in range(shown):
+            self._draw_bomb_icon(icon_x + i * 18, icon_y, radius=6,
+                                 sparkle=(sparkle_first and i == 0))
+        if self.bombs > max_icons:
+            extra = self.font_small.render(f"+{self.bombs - max_icons}",
+                                           True, BOMB_HUD_COLOR)
+            self.screen.blit(extra, (icon_x + max_icons * 18 + 2, base_y))
+
+        # 进度条：距下一枚炸弹还差多少分
+        bar_x = base_x
+        bar_y = base_y + label.get_height() + 6
+        bar_w = 140
+        bar_h = 6
+        progress_score = self.score - (self.score_for_next_bomb - BOMB_SCORE_THRESHOLD)
+        progress_score = max(0, min(BOMB_SCORE_THRESHOLD, progress_score))
+        ratio = progress_score / BOMB_SCORE_THRESHOLD
+        pygame.draw.rect(self.screen, BOMB_HUD_DIM,
+                         (bar_x, bar_y, bar_w, bar_h), border_radius=3)
+        pygame.draw.rect(self.screen, BOMB_HUD_BAR,
+                         (bar_x, bar_y, int(bar_w * ratio), bar_h),
+                         border_radius=3)
+        remain = self.score_for_next_bomb - self.score
+        hint = self.font_small.render(f"next +{remain}", True, TEXT_COLOR)
+        self.screen.blit(hint, (bar_x + bar_w + 8, bar_y - 6))
+
+    def _draw_bomb_mode_overlay(self):
+        """炸弹模式：脉动警戒红边框 + 顶部提示 + 鼠标准星高亮。"""
+        # 脉动边框
+        pulse = (math.sin(self.frame * 0.18) + 1.0) * 0.5  # 0..1
+        alpha = int(110 + 110 * pulse)
+        border_color = (BOMB_BORDER_COLOR[0], BOMB_BORDER_COLOR[1],
+                        BOMB_BORDER_COLOR[2], alpha)
+        border = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        pygame.draw.rect(border, border_color,
+                         (0, 0, WIDTH, HEIGHT),
+                         BOMB_BORDER_THICKNESS)
+        self.screen.blit(border, (0, 0))
+
+        # 顶部居中提示条
+        hint = self.font_small.render(
+            "BOMB MODE — 左键点击引爆任意球    Tab/右键 取消",
+            True, WHITE)
+        pad_x, pad_y = 12, 6
+        rect = hint.get_rect(center=(WIDTH // 2, 24))
+        bg_rect = rect.inflate(pad_x * 2, pad_y * 2)
+        bg = pygame.Surface(bg_rect.size, pygame.SRCALPHA)
+        bg.fill((BOMB_BORDER_COLOR[0], BOMB_BORDER_COLOR[1],
+                 BOMB_BORDER_COLOR[2], 210))
+        self.screen.blit(bg, bg_rect.topleft)
+        self.screen.blit(hint, rect)
+
+        # 鼠标悬停球：双环高亮 + 中心十字准星
+        mx, my = self.mouse_pos
+        target = self._ball_under_point(mx, my)
+        if target is not None:
+            tx, ty = int(target.x), int(target.y)
+            outer_r = int(target.radius + 6 + 3 * pulse)
+            inner_r = int(target.radius + 2)
+            pygame.draw.circle(self.screen, BOMB_AIM_COLOR,
+                               (tx, ty), outer_r, 2)
+            pygame.draw.circle(self.screen, BOMB_AIM_COLOR,
+                               (tx, ty), inner_r, 2)
+            # 十字准星（中间留空，避免遮住等级数字）
+            gap = 4
+            tick = 8
+            pygame.draw.line(self.screen, BOMB_AIM_COLOR,
+                             (tx - inner_r - tick, ty), (tx - inner_r - gap, ty), 2)
+            pygame.draw.line(self.screen, BOMB_AIM_COLOR,
+                             (tx + inner_r + gap, ty), (tx + inner_r + tick, ty), 2)
+            pygame.draw.line(self.screen, BOMB_AIM_COLOR,
+                             (tx, ty - inner_r - tick), (tx, ty - inner_r - gap), 2)
+            pygame.draw.line(self.screen, BOMB_AIM_COLOR,
+                             (tx, ty + inner_r + gap), (tx, ty + inner_r + tick), 2)
 
     def _draw_game_over(self):
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
@@ -651,26 +973,40 @@ class Game:
                     sys.exit()
 
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    pygame.event.set_grab(False)
-                    pygame.quit()
-                    sys.exit()
+                    # 两段式：先退出炸弹模式，再退出游戏
+                    if self.bomb_mode:
+                        self._exit_bomb_mode()
+                    else:
+                        pygame.event.set_grab(False)
+                        pygame.quit()
+                        sys.exit()
 
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_SPACE:
                         self.drop_ball()
+                    elif event.key == pygame.K_TAB:
+                        self._toggle_bomb_mode()
                     elif event.key == pygame.K_r and self.game_over:
                         self.reset()
                         self.audio.set_bgm_volume(0.18)  # 重开时恢复 BGM 音量
 
                 elif event.type == pygame.MOUSEMOTION:
-                    if not self.game_over:
+                    self.mouse_pos = event.pos
+                    if not self.game_over and not self.bomb_mode:
                         use_mouse = True
                         mx = event.pos[0]
                         self.spawn_x = self._clamp_spawn_x(mx)
 
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
-                        self.drop_ball()
+                        if self.bomb_mode:
+                            self._detonate_at(*event.pos)
+                        else:
+                            self.drop_ball()
+                    elif event.button == 3:
+                        # 右键：炸弹模式下作为"取消"
+                        if self.bomb_mode:
+                            self._exit_bomb_mode()
 
             # 连续按键（方向键）
             if not self.game_over and not use_mouse:
