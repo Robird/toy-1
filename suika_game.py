@@ -135,7 +135,7 @@ WHITE           = (255, 255, 255)
 
 # ── 炸弹（Bomb）机制相关 ──
 # 每攒满这么多分，授予 1 枚炸弹。固定阈值，简单直观。
-BOMB_SCORE_THRESHOLD = 2000
+BOMB_SCORE_THRESHOLD = 101
 # 炸弹模式下屏幕内描边（警戒红）。
 BOMB_BORDER_COLOR = (220, 50, 50, 180)
 BOMB_BORDER_THICKNESS = 4
@@ -392,7 +392,7 @@ class Ball:
                            (ix - hl_offset, iy - hl_offset), hl_radius)
 
         # 边框
-        pygame.draw.circle(surface, WHITE, (ix, iy), r, 2)
+        # pygame.draw.circle(surface, WHITE, (ix, iy), r, 2)
 
         # 等级数字
         txt = font.render(level_to_str(self.level), True, WHITE)
