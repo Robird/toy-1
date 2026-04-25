@@ -12,7 +12,7 @@ R 键 —— Game Over 重试本关；全部通关后从第 1 关重新开始
 关卡机制
 --------
 合出"目标水果"即过关，棋盘保留（目标球作为下一关的高级种子）。
-从葡萄一路推进到西瓜，全部 9 关后即"通关胜利"。
+从葡萄一路推进到南瓜，全部 10 关后即"通关胜利"。
 失败仅重玩当前关，关卡与炸弹进度保留，避免幼儿"全盘皆输"的挫败感。
 """
 
@@ -125,9 +125,10 @@ BALL_CONFIG = {
     9:  (84,  (80,  180, 220),  "椰子",  45),
     10: (96,  (240, 200, 50),   "蜜瓜",  55),
     11: (110, (50,  200, 50),   "西瓜",  66),
+    12: (126, (245, 140, 40),   "南瓜",  78),
 }
 
-MAX_LEVEL = 11
+MAX_LEVEL = 12
 SPAWN_MAX_LEVEL = 5     # 投放只出现 1~5 级
 
 # 颜色
@@ -163,9 +164,9 @@ EXPLOSION_PALETTE = (
 )
 
 # ── 关卡（Stage）机制 ──
-# 每个元素是该关需要合出的目标球等级。从葡萄(Lv3)起步，西瓜(Lv11)作为终关。
+# 每个元素是该关需要合出的目标球等级。从葡萄(Lv3)起步，南瓜(Lv12)作为终关。
 # 合出该等级的球即过关；下一关棋盘保留，刚合成的目标球作为种子。
-STAGE_TARGETS = (3, 4, 5, 6, 7, 8, 9, 10, 11)
+STAGE_TARGETS = (3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
 
 # 过关 / 胜利覆盖层颜色
 STAGE_BANNER_BG = (0, 120, 60, 200)        # 过关：绿色
@@ -1176,7 +1177,7 @@ class Game:
         t1 = self.font_large.render("VICTORY!", True, STAGE_TEXT_COLOR)
         self.screen.blit(t1, t1.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 60)))
 
-        t2 = self.font_mid.render("恭喜全部通关！", True, STAGE_TEXT_COLOR)
+        t2 = self.font_mid.render("恭喜合出南瓜，全部通关！", True, STAGE_TEXT_COLOR)
         self.screen.blit(t2, t2.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 10)))
 
         t3 = self.font_small.render(f"最终分数：{self.score}",
