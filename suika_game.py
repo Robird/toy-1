@@ -1,13 +1,19 @@
 """
-合成大西瓜 (Suika / Merge Balls Game)
+合成大西瓜 (Suika / Merge Balls Game) —— 关卡版
 --------------------------------------
 左右方向键 或 鼠标移动 —— 控制投放位置
-空格键 或 鼠标左键 —— 投放小球
+空格键 或 鼠标左键 —— 投放小球；过关画面下按空格进入下一关
 Tab 键 —— 拥有炸弹时切换到炸弹模式（再次按 Tab/右键 退出）
   · 炸弹模式下左键点击将引爆任意球（不加分）
-  · 每累计 2000 分获得 1 枚炸弹，可叠加
+  · 每过一关奖励 1 枚炸弹，可叠加，跨关保留
 Esc —— 优先退出炸弹模式；非炸弹模式下退出游戏
-R 键 —— Game Over 后重新开始
+R 键 —— Game Over 重试本关；全部通关后从第 1 关重新开始
+
+关卡机制
+--------
+合出"目标水果"即过关，棋盘保留（目标球作为下一关的高级种子）。
+从葡萄一路推进到西瓜，全部 9 关后即"通关胜利"。
+失败仅重玩当前关，关卡与炸弹进度保留，避免幼儿"全盘皆输"的挫败感。
 """
 
 import pygame
@@ -134,19 +140,18 @@ OVERLAY_COLOR   = (0,   0,   0,  140)
 WHITE           = (255, 255, 255)
 
 # ── 炸弹（Bomb）机制相关 ──
-# 每攒满这么多分，授予 1 枚炸弹。固定阈值，简单直观。
-BOMB_SCORE_THRESHOLD = 101
+# 炸弹获取与「过关」绑定：每过一关奖励一枚炸弹（终关胜利不再发放）。
+# 这样发放节奏与关卡节奏一致，幼儿更容易理解，也鼓励"前期攒、后期用"的策略。
+BOMB_PER_STAGE_CLEAR = 1
 # 炸弹模式下屏幕内描边（警戒红）。
 BOMB_BORDER_COLOR = (220, 50, 50, 180)
 BOMB_BORDER_THICKNESS = 4
 # 鼠标准星与悬停高亮颜色。
 BOMB_AIM_COLOR = (255, 60, 60)
-# HUD 上炸弹图标/进度条颜色。
+# HUD 上炸弹图标颜色。
 BOMB_HUD_COLOR = (40, 40, 40)         # 炸弹主体
 BOMB_HUD_FUSE = (160, 110, 60)        # 引信
 BOMB_HUD_SPARK = (255, 210, 80)       # 引信火花 / 高亮
-BOMB_HUD_BAR = (220, 80, 60)          # 进度条填充色
-BOMB_HUD_DIM   = (200, 200, 200)
 # 刚获得炸弹时的闪烁颜色（金色，更像奖励）。
 BOMB_FLASH_COLOR = (240, 180, 30)
 # 爆炸火星颜色调色板（从该调色板随机抽取）。
@@ -156,6 +161,16 @@ EXPLOSION_PALETTE = (
     (255, 100, 30),
     (220, 60, 40),
 )
+
+# ── 关卡（Stage）机制 ──
+# 每个元素是该关需要合出的目标球等级。从葡萄(Lv3)起步，西瓜(Lv11)作为终关。
+# 合出该等级的球即过关；下一关棋盘保留，刚合成的目标球作为种子。
+STAGE_TARGETS = (3, 4, 5, 6, 7, 8, 9, 10, 11)
+
+# 过关 / 胜利覆盖层颜色
+STAGE_BANNER_BG = (0, 120, 60, 200)        # 过关：绿色
+VICTORY_BANNER_BG = (200, 140, 30, 220)    # 通关：金色
+STAGE_TEXT_COLOR = (255, 255, 255)
 
 
 # ──────────────────────────────────────
@@ -231,6 +246,32 @@ def _generate_charge_sound():
     )
 
 
+def _generate_stage_clear_sound():
+    """过关音效：上行四连音琶音，明亮欢快。"""
+    return make_sound(
+        concat_samples(*[
+            generate_samples(freq, 0.12, volume=0.32,
+                             timbre=Timbre.Sine, fade_out_start=0.0)
+            for freq in (523, 659, 784, 1047)
+        ])
+    )
+
+
+def _generate_victory_sound():
+    """通关胜利音效：双层琶音叠加，长尾。"""
+    lead = concat_samples(*[
+        generate_samples(freq, 0.18, volume=0.30,
+                         timbre=Timbre.Sine, fade_out_start=0.0)
+        for freq in (523, 659, 784, 1047, 1319)
+    ])
+    pad = concat_samples(*[
+        generate_samples(freq, 0.18, volume=0.18,
+                         timbre=Timbre.Hollow, fade_out_start=0.0)
+        for freq in (262, 330, 392, 523, 659)
+    ])
+    return make_sound(mix_samples(lead, pad))
+
+
 def _generate_bgm():
     """合成一段 chiptune 风格循环 BGM（约 30 秒），返回 pygame.mixer.Sound"""
     bpm = 140
@@ -244,19 +285,19 @@ def _generate_bgm():
         'D4', 'F4', 'A4', 'G4', 'F4', 'E4', 'D4', 'R',
         'C4', 'E4', 'G4', 'A4', 'B4', 'C5', 'B4', 'A4',
         'G4', 'E4', 'D4', 'E4', 'C4', 'R',  'C4', 'R',
-        
+
         # Part A variant
         'E4', 'G4', 'C5', 'B4', 'A4', 'G4', 'E4', 'R',
         'D4', 'F4', 'A4', 'G4', 'F4', 'E4', 'D4', 'R',
         'C4', 'E4', 'G4', 'A4', 'B4', 'C5', 'D5', 'C5',
         'B4', 'G4', 'A4', 'B4', 'C5', 'R',  'C5', 'R',
-        
+
         # Part B
         'D4', 'E4', 'F4', 'D4', 'E4', 'F4', 'G4', 'E4',
         'F4', 'G4', 'A4', 'F4', 'G4', 'A4', 'B4', 'G4',
         'C5', 'B4', 'A4', 'G4', 'F4', 'E4', 'D4', 'E4',
         'F4', 'D4', 'B3', 'G3', 'C4', 'R',  'C4', 'R',
-        
+
         # Part A return
         'E4', 'G4', 'C5', 'B4', 'A4', 'G4', 'E4', 'R',
         'D4', 'F4', 'A4', 'G4', 'F4', 'E4', 'D4', 'R',
@@ -271,19 +312,19 @@ def _generate_bgm():
         'F3', 'F3', 'C3', 'C3', 'G3', 'G3', 'C3', 'C3',
         'C3', 'C3', 'E3', 'E3', 'F3', 'F3', 'G3', 'G3',
         'A3', 'A3', 'F3', 'F3', 'G3', 'G3', 'C3', 'C3',
-        
+
         # Part A variant
         'C3', 'C3', 'G3', 'G3', 'A3', 'A3', 'E3', 'E3',
         'F3', 'F3', 'C3', 'C3', 'G3', 'G3', 'C3', 'C3',
         'C3', 'C3', 'E3', 'E3', 'F3', 'F3', 'G3', 'G3',
         'G3', 'G3', 'G3', 'G3', 'C3', 'C3', 'C3', 'C3',
-        
+
         # Part B
         'G2', 'G2', 'G2', 'G2', 'C3', 'C3', 'C3', 'C3',
         'F2', 'F2', 'F2', 'F2', 'G2', 'G2', 'G2', 'G2',
         'A2', 'A2', 'E3', 'E3', 'F3', 'F3', 'C3', 'C3',
         'G2', 'G2', 'G2', 'G2', 'C3', 'C3', 'C3', 'C3',
-        
+
         # Part A return
         'C3', 'C3', 'G3', 'G3', 'A3', 'A3', 'E3', 'E3',
         'F3', 'F3', 'C3', 'C3', 'G3', 'G3', 'C3', 'C3',
@@ -509,47 +550,74 @@ class Game:
         self.snd_gameover = _generate_gameover_sound()
         self.snd_explode = _generate_pop_sound()
         self.snd_bomb_ready = _generate_charge_sound()
+        self.snd_stage_clear = _generate_stage_clear_sound()
+        self.snd_victory = _generate_victory_sound()
 
         # BGM
         self.bgm = _generate_bgm()
         self.audio = AudioRuntime(total_channels=8)
         self.audio.play_bgm(self.bgm, volume=0.18)
 
-        self.reset()
-
-    def reset(self):
-        self._setup_space()
-        self.balls: list[Ball] = []
-        self.particles: list[MergeParticle] = []
-        self.score = 0
-        self.max_level_reached = 0
-        self.game_over = False
-        self.spawn_x = WIDTH // 2
-        self.frame = 0
-
-        self.current_level = random.randint(1, SPAWN_MAX_LEVEL)
-        self.next_level = random.randint(1, SPAWN_MAX_LEVEL)
-        self.can_drop = True
-        self.drop_cooldown = 0
-        self._refresh_spawn_x()
-
-        # ── 炸弹机制状态 ──
-        # bombs：剩余炸弹数（叠加）。
-        # score_for_next_bomb：下一枚炸弹发放阈值。
-        # bomb_mode：是否处于炸弹模式（投放被禁用）。
-        # bomb_flash：刚获得炸弹时的 HUD 闪烁帧数。
-        # explosions：炸裂冲击波动画列表。
-        self.bombs = 0
-        self.score_for_next_bomb = BOMB_SCORE_THRESHOLD
-        self.bomb_mode = False
-        self.bomb_flash = 0
-        self.explosions: list[Explosion] = []
-        self.mouse_pos = (WIDTH // 2, SPAWN_Y)
-
+        # 字体只创建一次
         self.font_large = load_font(44, "simhei", "microsoftyahei", "simsun", fallback_size=48)
         self.font_mid   = load_font(28, "simhei", "microsoftyahei", "simsun", fallback_size=30)
         self.font_small = load_font(20, "simhei", "microsoftyahei", "simsun", fallback_size=22)
         self.font_ball  = load_font(22, "simhei", "microsoftyahei", "simsun", fallback_size=24)
+
+        # 关卡 / 炸弹的"跨场"状态：在 full reset 之外的重置（重试本关、进入下一关）
+        # 中要保留的内容会在这里维护初值，由 reset() 根据 mode 决定是否清掉。
+        self.stage_index = 0
+        self.bombs = 0
+        self.score = 0
+
+        self.reset(mode="full")
+
+    def reset(self, mode: str = "full"):
+        """重置棋盘。
+
+        mode:
+          - "full":  全新一局，从第 1 关开始，分数/炸弹清零。
+          - "retry": 仅重玩当前关——清空棋盘，但保留 stage_index、bombs、score。
+          - "next":  进入下一关——保留棋盘上的球（含刚合出的目标球作为种子），
+                     仅重置危险线计数和投放冷却。
+        """
+        if mode == "full":
+            self.stage_index = 0
+            self.bombs = 0
+            self.score = 0
+
+        if mode in ("full", "retry"):
+            # 清空物理世界与球列表
+            self._setup_space()
+            self.balls = []
+        # mode == "next" 时复用现有 self.space 和 self.balls
+
+        self.particles: list[MergeParticle] = []
+        self.explosions: list[Explosion] = []
+        self.max_level_reached = max(
+            (b.level for b in getattr(self, "balls", [])), default=0)
+        self.game_over = False
+        self.stage_cleared = False
+        self.victory = False
+        self.spawn_x = WIDTH // 2
+        self.frame = 0
+
+        self.current_level = self._roll_spawn_level()
+        self.next_level = self._roll_spawn_level()
+        self.can_drop = True
+        self.drop_cooldown = 0
+        self._refresh_spawn_x()
+
+        # 重置每个球的"危险线累积时间"，否则进入下一关时旧球可能瞬间触发 GAME OVER
+        for b in self.balls:
+            b.settled_above_danger = 0
+            b.drop_frame = 0   # 让宽限期从这一帧重新计算
+
+        # ── 炸弹机制运行时状态 ──
+        # bombs / score 在 mode != "full" 时保留。
+        self.bomb_mode = False
+        self.bomb_flash = 0
+        self.mouse_pos = (WIDTH // 2, SPAWN_Y)
 
     def _setup_space(self):
         self.space = pymunk.Space()
@@ -603,19 +671,16 @@ class Game:
         self.spawn_x = self._clamp_spawn_x(self.spawn_x)
 
     # ---------- 炸弹机制 ----------
-    def _award_bombs_if_due(self):
-        """若分数跨过阈值则发放炸弹，支持一次跨多个阈值。"""
-        awarded = 0
-        while self.score >= self.score_for_next_bomb:
-            self.bombs += 1
-            self.score_for_next_bomb += BOMB_SCORE_THRESHOLD
-            awarded += 1
-        if awarded > 0:
-            self.bomb_flash = 45
-            self.snd_bomb_ready.play()
+    def _award_bomb_for_stage_clear(self):
+        """过关时发放 1 枚炸弹（终关胜利不发，因为没有意义）。"""
+        if self.victory:
+            return
+        self.bombs += BOMB_PER_STAGE_CLEAR
+        self.bomb_flash = 45
+        self.snd_bomb_ready.play()
 
     def _toggle_bomb_mode(self):
-        if self.game_over:
+        if self.game_over or self.stage_cleared or self.victory:
             return
         if self.bomb_mode:
             self.bomb_mode = False
@@ -624,6 +689,43 @@ class Game:
 
     def _exit_bomb_mode(self):
         self.bomb_mode = False
+
+    # ---------- 关卡机制 ----------
+    @property
+    def current_target_level(self):
+        """当前关卡需要合出的目标球等级。"""
+        return STAGE_TARGETS[self.stage_index]
+
+    @property
+    def current_spawn_max_level(self):
+        """当前关卡允许随机出的最高等级。"""
+        return max(1, min(SPAWN_MAX_LEVEL, self.current_target_level - 1))
+
+    def _roll_spawn_level(self):
+        """按当前关卡的随机池规则生成一个待投放等级。"""
+        return random.randint(1, self.current_spawn_max_level)
+
+    def _check_stage_clear(self, new_level):
+        """合并产生新球后调用。若达到目标等级，则触发过关 / 胜利。"""
+        if self.stage_cleared or self.victory or self.game_over:
+            return
+        if new_level >= self.current_target_level:
+            if self.stage_index >= len(STAGE_TARGETS) - 1:
+                self.victory = True
+                self.snd_victory.play()
+                self.audio.set_bgm_volume(0.06)
+            else:
+                self.stage_cleared = True
+                self.snd_stage_clear.play()
+                # 关卡奖励：过一关 +1 炸弹（终关胜利不再发放）
+                self._award_bomb_for_stage_clear()
+
+    def advance_to_next_stage(self):
+        """玩家在过关画面按 Space/Enter 调用：进入下一关。"""
+        if not self.stage_cleared or self.victory:
+            return
+        self.stage_index += 1
+        self.reset(mode="next")
 
     def _ball_under_point(self, mx, my):
         """返回点 (mx,my) 命中的最上层球；用渲染顺序的反序近似 z-order。"""
@@ -657,6 +759,8 @@ class Game:
     def drop_ball(self):
         if not self.can_drop or self.game_over or self.bomb_mode:
             return
+        if self.stage_cleared or self.victory:
+            return
         self._refresh_spawn_x()
 
         # 投放时加随机微小扰动，避免完美纵向堆叠。
@@ -669,7 +773,7 @@ class Game:
         self.balls.append(ball)
         self.snd_drop.play()
         self.current_level = self.next_level
-        self.next_level = random.randint(1, SPAWN_MAX_LEVEL)
+        self.next_level = self._roll_spawn_level()
         self._refresh_spawn_x()
         self.can_drop = False
         self.drop_cooldown = DROP_COOLDOWN_FRAMES
@@ -679,11 +783,18 @@ class Game:
         if self.bomb_flash > 0:
             self.bomb_flash -= 1
         if self.game_over:
-            # 游戏结束时禁用炸弹：濒死救场过强，剩余炸弹也清零。
+            # 游戏结束时禁用炸弹模式；炸弹数量保留给本关重试使用。
             if self.bomb_mode:
                 self.bomb_mode = False
-            self.bombs = 0
             # 粒子与爆炸动画继续更新
+            self._update_particles()
+            self._update_explosions()
+            return
+
+        if self.stage_cleared or self.victory:
+            # 过关 / 通关画面：物理暂停，仍允许特效继续播放，画面更欢快。
+            if self.bomb_mode:
+                self.bomb_mode = False
             self._update_particles()
             self._update_explosions()
             return
@@ -742,6 +853,8 @@ class Game:
                         continue
                     self._merge_pair(b1, b2)
                     merged_any = True
+                    if self.stage_cleared or self.victory:
+                        return
                     break
                 if merged_any:
                     break
@@ -773,7 +886,6 @@ class Game:
         self.balls.append(new_ball)
 
         self.score += BALL_CONFIG[new_level][3]
-        self._award_bombs_if_due()
         if new_level in self.snd_merge:
             self.snd_merge[new_level].play()
         if new_level > self.max_level_reached:
@@ -781,6 +893,8 @@ class Game:
         for _ in range(10):
             self.particles.append(
                 MergeParticle(nx, ny, BALL_CONFIG[new_level][1]))
+        # 关卡目标判定：必须放在分数与音效之后，过关音效才不会被合并音覆盖。
+        self._check_stage_clear(new_level)
 
     # ---------- 绘制 ----------
     def draw(self):
@@ -801,7 +915,8 @@ class Game:
                              (x, DANGER_Y), (x + 8, DANGER_Y), 2)
 
         # 引导线 & 待投放球（炸弹模式下隐藏，避免和投放视觉混淆）
-        if self.can_drop and not self.game_over and not self.bomb_mode:
+        if self.can_drop and not self.game_over and not self.bomb_mode \
+                and not self.stage_cleared and not self.victory:
             pygame.draw.line(self.screen, GUIDE_COLOR,
                              (self.spawn_x, SPAWN_Y + BALL_CONFIG[self.current_level][0]),
                              (self.spawn_x, FLOOR_Y), 1)
@@ -813,6 +928,22 @@ class Game:
         label = self.font_small.render("NEXT", True, TEXT_COLOR)
         self.screen.blit(label,
                          label.get_rect(center=(preview_x, preview_y - 25)))
+
+        # "目标" 预览：放在 NEXT 左侧，提示当前关需要合出哪种水果
+        target_level = self.current_target_level
+        target_cfg = BALL_CONFIG[target_level]
+        # 目标球较大时，用统一显示半径避免画到 NEXT 上
+        target_x = WIDTH - 130
+        target_y = 50
+        target_display_r = 24
+        scale = target_display_r / target_cfg[0]
+        self._draw_preview_ball(target_x, target_y, target_level, scale)
+        tlabel = self.font_small.render("TARGET", True, TEXT_COLOR)
+        self.screen.blit(tlabel,
+                         tlabel.get_rect(center=(target_x, target_y - 25)))
+        tname = self.font_small.render(target_cfg[2], True, TEXT_COLOR)
+        self.screen.blit(tname,
+                         tname.get_rect(center=(target_x, target_y + 32)))
 
         # 所有球
         for b in self.balls:
@@ -829,6 +960,10 @@ class Game:
         # 分数 & 最高等级
         s1 = self.font_mid.render(f"Score: {self.score}", True, TEXT_COLOR)
         self.screen.blit(s1, (WALL_LEFT + 8, 8))
+        # 关卡显示
+        stage_text = f"Stage {self.stage_index + 1}/{len(STAGE_TARGETS)}"
+        s_stage = self.font_small.render(stage_text, True, TEXT_COLOR)
+        self.screen.blit(s_stage, (WALL_LEFT + 8 + s1.get_width() + 12, 16))
         if self.max_level_reached > 0:
             name = BALL_CONFIG[self.max_level_reached][2]
             s2 = self.font_small.render(f"Max: Lv{self.max_level_reached} {name}",
@@ -845,6 +980,10 @@ class Game:
         # Game Over 覆盖层
         if self.game_over:
             self._draw_game_over()
+        elif self.victory:
+            self._draw_victory()
+        elif self.stage_cleared:
+            self._draw_stage_clear()
 
         pygame.display.flip()
 
@@ -885,7 +1024,7 @@ class Game:
                                (fuse_x2, fuse_y2), 1)
 
     def _draw_bomb_hud(self):
-        """HUD：剩余炸弹数 + 炸弹图标列 + 距下一枚进度条。"""
+        """HUD：剩余炸弹数 + 炸弹图标列 + 下一枚获取方式提示。"""
         base_x = WALL_LEFT + 8
         base_y = 70
 
@@ -902,7 +1041,7 @@ class Game:
         icon_y = base_y + label.get_height() // 2 + 1
         max_icons = 5
         shown = min(self.bombs, max_icons)
-        # 闪烁帧内，顶部那枚炸弹画火花，强化“快点交付”貃示
+        # 闪烁帧内，顶部那枚炸弹画火花，强化"快点交付"提示
         sparkle_first = self.bomb_flash > 0 or self.bomb_mode
         for i in range(shown):
             self._draw_bomb_icon(icon_x + i * 18, icon_y, radius=6,
@@ -912,22 +1051,17 @@ class Game:
                                            True, BOMB_HUD_COLOR)
             self.screen.blit(extra, (icon_x + max_icons * 18 + 2, base_y))
 
-        # 进度条：距下一枚炸弹还差多少分
-        bar_x = base_x
-        bar_y = base_y + label.get_height() + 6
-        bar_w = 140
-        bar_h = 6
-        progress_score = self.score - (self.score_for_next_bomb - BOMB_SCORE_THRESHOLD)
-        progress_score = max(0, min(BOMB_SCORE_THRESHOLD, progress_score))
-        ratio = progress_score / BOMB_SCORE_THRESHOLD
-        pygame.draw.rect(self.screen, BOMB_HUD_DIM,
-                         (bar_x, bar_y, bar_w, bar_h), border_radius=3)
-        pygame.draw.rect(self.screen, BOMB_HUD_BAR,
-                         (bar_x, bar_y, int(bar_w * ratio), bar_h),
-                         border_radius=3)
-        remain = self.score_for_next_bomb - self.score
-        hint = self.font_small.render(f"next +{remain}", True, TEXT_COLOR)
-        self.screen.blit(hint, (bar_x + bar_w + 8, bar_y - 6))
+        # 提示：下一枚炸弹的获取方式（与关卡绑定）
+        hint_y = base_y + label.get_height() + 4
+        if self.victory:
+            hint_text = ""
+        elif self.stage_index >= len(STAGE_TARGETS) - 1:
+            hint_text = "终关无炸弹奖励"
+        else:
+            hint_text = "过关 +1 炸弹"
+        if hint_text:
+            hint = self.font_small.render(hint_text, True, TEXT_COLOR)
+            self.screen.blit(hint, (base_x, hint_y))
 
     def _draw_bomb_mode_overlay(self):
         """炸弹模式：脉动警戒红边框 + 顶部提示 + 鼠标准星高亮。"""
@@ -995,9 +1129,62 @@ class Game:
                 f"Max: Lv{self.max_level_reached} {name}", True, WHITE)
             self.screen.blit(t3, t3.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 45)))
 
-        t4 = self.font_small.render("Press  R  to  Restart", True,
-                                    (200, 200, 200))
+        # 提示玩家：失败只是"重玩本关"，关卡进度和炸弹都保留，降低挫败感。
+        t4 = self.font_small.render(
+            f"Press  R  to  Retry  Stage {self.stage_index + 1}",
+            True, (200, 200, 200))
         self.screen.blit(t4, t4.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 85)))
+
+    def _draw_stage_clear(self):
+        """过关画面：半透明绿色横幅 + 提示按 Space 进入下一关。"""
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        overlay.fill(OVERLAY_COLOR)
+        self.screen.blit(overlay, (0, 0))
+
+        # 中心横幅
+        banner = pygame.Surface((WIDTH, 180), pygame.SRCALPHA)
+        banner.fill(STAGE_BANNER_BG)
+        self.screen.blit(banner, (0, HEIGHT // 2 - 90))
+
+        t1 = self.font_large.render("STAGE CLEAR!", True, STAGE_TEXT_COLOR)
+        self.screen.blit(t1, t1.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 40)))
+
+        cleared_name = BALL_CONFIG[self.current_target_level][2]
+        t2 = self.font_mid.render(
+            f"已合成 {cleared_name}！  +1 炸弹",
+            True, STAGE_TEXT_COLOR)
+        self.screen.blit(t2, t2.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 5)))
+
+        # 下一关目标提示
+        next_target = STAGE_TARGETS[self.stage_index + 1]
+        next_name = BALL_CONFIG[next_target][2]
+        t3 = self.font_small.render(
+            f"下一关目标：{next_name}    按 Space 继续",
+            True, STAGE_TEXT_COLOR)
+        self.screen.blit(t3, t3.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 50)))
+
+    def _draw_victory(self):
+        """全部通关：金色横幅 + 提示按 R 重新开始。"""
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        overlay.fill(OVERLAY_COLOR)
+        self.screen.blit(overlay, (0, 0))
+
+        banner = pygame.Surface((WIDTH, 220), pygame.SRCALPHA)
+        banner.fill(VICTORY_BANNER_BG)
+        self.screen.blit(banner, (0, HEIGHT // 2 - 110))
+
+        t1 = self.font_large.render("VICTORY!", True, STAGE_TEXT_COLOR)
+        self.screen.blit(t1, t1.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 60)))
+
+        t2 = self.font_mid.render("恭喜全部通关！", True, STAGE_TEXT_COLOR)
+        self.screen.blit(t2, t2.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 10)))
+
+        t3 = self.font_small.render(f"最终分数：{self.score}",
+                                    True, STAGE_TEXT_COLOR)
+        self.screen.blit(t3, t3.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 30)))
+
+        t4 = self.font_small.render("按 R 重新开始", True, STAGE_TEXT_COLOR)
+        self.screen.blit(t4, t4.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 70)))
 
     # ---------- 主循环 ----------
     def run(self):
@@ -1021,23 +1208,39 @@ class Game:
 
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_SPACE:
-                        self.drop_ball()
+                        if self.stage_cleared:
+                            self.advance_to_next_stage()
+                        else:
+                            self.drop_ball()
+                    elif event.key == pygame.K_RETURN:
+                        # 回车在过关界面也作为"继续"快捷键
+                        if self.stage_cleared:
+                            self.advance_to_next_stage()
                     elif event.key == pygame.K_TAB:
                         self._toggle_bomb_mode()
-                    elif event.key == pygame.K_r and self.game_over:
-                        self.reset()
-                        self.audio.set_bgm_volume(0.18)  # 重开时恢复 BGM 音量
+                    elif event.key == pygame.K_r:
+                        if self.victory:
+                            # 通关后按 R：完全重新开始
+                            self.reset(mode="full")
+                            self.audio.set_bgm_volume(0.18)
+                        elif self.game_over:
+                            # 失败按 R：仅重玩本关，关卡 / 炸弹保留
+                            self.reset(mode="retry")
+                            self.audio.set_bgm_volume(0.18)
 
                 elif event.type == pygame.MOUSEMOTION:
                     self.mouse_pos = event.pos
-                    if not self.game_over and not self.bomb_mode:
+                    if not self.game_over and not self.bomb_mode \
+                            and not self.stage_cleared and not self.victory:
                         use_mouse = True
                         mx = event.pos[0]
                         self.spawn_x = self._clamp_spawn_x(mx)
 
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
-                        if self.bomb_mode:
+                        if self.stage_cleared:
+                            self.advance_to_next_stage()
+                        elif self.bomb_mode:
                             self._detonate_at(*event.pos)
                         else:
                             self.drop_ball()
@@ -1047,7 +1250,8 @@ class Game:
                             self._exit_bomb_mode()
 
             # 连续按键（方向键）
-            if not self.game_over and not use_mouse:
+            paused = self.game_over or self.stage_cleared or self.victory
+            if not paused and not use_mouse:
                 keys = pygame.key.get_pressed()
                 if keys[pygame.K_LEFT]:
                     self.spawn_x = self._clamp_spawn_x(self.spawn_x - MOVE_SPEED)
@@ -1055,7 +1259,7 @@ class Game:
                 if keys[pygame.K_RIGHT]:
                     self.spawn_x = self._clamp_spawn_x(self.spawn_x + MOVE_SPEED)
                     use_mouse = False
-            elif not self.game_over:
+            elif not paused:
                 # 鼠标模式下仍允许键盘微调
                 keys = pygame.key.get_pressed()
                 if keys[pygame.K_LEFT] or keys[pygame.K_RIGHT]:
