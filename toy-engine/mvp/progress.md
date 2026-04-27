@@ -11,7 +11,7 @@
 | 里程碑 | 状态 | 说明 |
 |---|---|---|
 | M1 引擎设计文档（toy-engine/mvp/） | ✅ 完成 | 本轮由 Claude subagent 交付 |
-| M2 引擎实现 + 单测 | ⬜ 未开始 | 按 11 篇文档逐模块落地 |
+| M2 引擎实现 + 单测 | ✅ 完成 | 10 步全部落地，全仓 372 passed，覆盖率 92%（rng/geom/recorder/metrics 100%） |
 | M3 fish 业务实现 | ⬜ 未开始 | M2 后启动，fish-doc 自行追踪 |
 | M4 联调 + bot 跑分调参 | ⬜ 未开始 | |
 | M5 引擎+fish 联合验收 | ⬜ 未开始 | 按 [09-mvp-scope.md §7](09-mvp-scope.md) |
@@ -38,22 +38,22 @@
 
 ---
 
-## M2 任务表（待启动）
+## M2 任务表
 
-> M2 在主会话批准 M1 后再细化。下面是建议的拆分顺序（自底向上，每条 ≈ 1 个独立 subagent 任务）。
+本轮采用 Claude 实现 → GPT 审阅修小问题 → 主会话独立 commit 的迭代流程。
 
-| ID | 任务 | 依赖 | 备注 |
-|---|---|---|---|
-| M2-01 | 实现 `toy_engine/rng.py` + 单测 | — | 优先级最高，其它都依赖 |
-| M2-02 | 实现 `toy_engine/geom.py` + 单测 | — | 与 M2-01 可并行 |
-| M2-03 | 实现 `toy_engine/input.py` + 单测 | M2-01 | |
-| M2-04 | 实现 `toy_engine/recorder.py` + 单测 | M2-03 | |
-| M2-05 | 实现 `toy_engine/metrics.py` + 单测 | — | |
-| M2-06 | 实现 `toy_engine/loop.py` + 单测 | M2-03 | |
-| M2-07 | 实现 `toy_engine/font.py` re-export | — | 薄 re-export + repo root path guard |
-| M2-08 | 实现 `toy_engine/render/` 全部 | M2-01, M2-02 | 体积最大 |
-| M2-09 | 实现 `toy_engine/tools_lib` + `tools/*.py` | M2-04, M2-05, M2-06 | |
-| M2-10 | 端到端 smoke：mock GameFactory 跑通 tools | M2-01..09 | fish 实现前的自检 |
+| ID | 任务 | 状态 | 提交 | 备注 |
+|---|---|---|---|---|
+| M2-01 | 实现 `toy_engine/rng.py` + 单测 | ✅ | `901cdb2` | 28 测试；命名子流派生算法用 `_SPAWN_DOMAIN = b"toy_engine.SeededRng.v1\0"` 钉死字节级 |
+| M2-02 | 实现 `toy_engine/geom.py` + 单测 | ✅ | `1709d76` | 42 测试；含同心兜底；纯标准库 |
+| M2-03 | 实现 `toy_engine/input.py` + 单测 | ✅ | `0dbe088` | 37 测试；pygame IO 通过 monkeypatch helper 注入桩 |
+| M2-04 | 实现 `toy_engine/recorder.py` + 单测 | ✅ | `f334e16` | 同步把 `ReplayInput.from_recording` 改为 `Recorder.load` 薄包装 |
+| M2-05 | 实现 `toy_engine/metrics.py` + 单测 | ✅ | `3986274` | Kahan 求和；`debug=False` 默认 release（warn+drop） |
+| M2-06 | 实现 `toy_engine/loop.py` + 单测 | ✅ | `d09bd0f` | 固定步长；GUI/headless 共用 `_tick_once`；零 pygame 引用 |
+| M2-07 | 实现 `toy_engine/font.py` re-export | ✅ | `fe20224` | 方案 A（path hack + re-export `load_font` / `FONT_ALIASES`） |
+| M2-08 | 实现 `toy_engine/render/` 全部 | ✅ | `cd231d7` | `GeoCanvas` / `Palette` / `ParticleSystem` / `ScreenShake`；像素级断言 |
+| M2-09 | 实现 `toy_engine/tools_lib` + `tools/*.py` | ✅ | `c7a6838` | `GameFactory` Protocol + 三个 CLI；含 mock factory |
+| M2-10 | 端到端 smoke + 覆盖率自检 | ✅ | `dbe5f71` | 6 个 subprocess e2e；总覆盖率 92%；4 个核心模块 100% |
 
 ---
 
@@ -66,8 +66,15 @@
 | EQ3 | `Vec2` 是否提供 numpy 加速 | [06-geom.md](06-geom.md) | 暂否决（百级实体不需要） |
 | EQ4 | `GeoCanvas` 是否做后处理 layer | [07-render.md](07-render.md) | 暂否决 |
 | EQ5 | tools 是否做并行/dashboard | [08-tools.md](08-tools.md) | 暂否决 |
-| EQ6 | font_utils.py 是否最终搬家到 `toy_engine/font.py` | [00-overview.md §5](00-overview.md) | 选 A（薄 re-export）；待 M2 复盘 |
+| EQ6 | font_utils.py 是否最终搬家到 `toy_engine/font.py` | [00-overview.md §5](00-overview.md) | 选 A（薄 re-export）；M2-08 render 未触发清理需求，方案 A 继续保留 |
 | EQ7 | audio_runtime/audio_utils 是否下沉 | [00-overview.md §6](00-overview.md) | 暂不下沉，待第二个游戏出现再评 |
+| EQ8 | 文档冲突：[03-input.md](03-input.md) 写"缺失 `meta.duration_frames` 时 fallback + warning"，但 [04-recorder.md](04-recorder.md) 要求必填且 `Recorder.load` raise | M2-04 review 发现 | 实现按 04 的 raise 落地；后续需修 03 文档以对齐 |
+| EQ9 | `MetricsCollector(debug=...)` 与 sample schema (`{t,v}`) 在 [05-metrics.md](05-metrics.md) 未明确文档化 | M2-05 review 发现 | 实现按 release/warn+drop + 严格 `{t,v}` 落地；待补文档 |
+| EQ10 | tools 在业务 `result` 缺失时兜底 `DONE`/`TIMEOUT`，[08-tools.md](08-tools.md) 未声明 | M2-09 review 发现 | 当前实现兜底，便于聚合；fish 接入后视情况收紧 |
+| EQ11 | `tools/replay.py --force` 通过私有 `_canonical_hash` + 临时文件改写 hash 实现；将来公共化建议给 `Recorder.load(strict_hash=False)` 加参数 | M2-09 review 发现 | 当前路径可靠且自清理；M3 后再评 |
+| EQ12 | `GameFactory` 协议未含 metrics 入口；业务 `World` 如何把 fish 五大指标写入 tools 的 `MetricsCollector` 待对齐 | M2-09 review 发现 | M3 fish 接入时一并讨论（可能扩 `make_world(*, metrics)`，或 World 持有自己的 collector 由 tools 合并） |
+| EQ13 | `tools/render_benchmark.py` 渲染 CPU 指标工具化缺口 | [09-mvp-scope.md §3](09-mvp-scope.md) | 仍待补 / 或在 M5 联合验收手测说明 |
+| EQ14 | `test_perf_budget_100_runs_under_2s` 在 `coverage.py` 行级追踪下超时 | M2-10 发现 | 不带 `--cov` 通过；CI 跑覆盖率任务时 deselect 该用例 |
 
 > fish-doc Q6（Scene/System 抽象）已**关闭**：决议见 [02-scene.md §1](02-scene.md)，并已同步到 [fish-doc progress.md](../../fish-doc/mvp/progress.md)。
 
@@ -92,3 +99,4 @@
 | 时间 | 角色 | 动作 | 备注 |
 |---|---|---|---|
 | 2026-04-27 | Claude subagent | 完成 M1 全部 11 篇文档；Q6 决议为"不做 ECS，做 GameLoop"；字体选方案 A；音频暂不下沉 | 等待主会话批准并安排 M2 |
+| 2026-04-27 | 主会话 + Claude/GPT subagent 团队 | 完成 M2 全部 10 步实现；每步 Claude 编码 + GPT 审阅 + 主会话独立 commit；全仓 372 passed，覆盖率 92%（rng/geom/recorder/metrics 4 个核心模块 100%）；新增 EQ8–EQ14 七项文档/集成遗留 | 等待 M3 fish 业务接入；提示 fish 团队优先关注 EQ12（metrics 入口）与 EQ8（duration_frames 文档对齐） |
