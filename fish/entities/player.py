@@ -45,6 +45,7 @@ class Player(Entity):
     max_speed: float = 0.0
     accel: float = 0.0
     turn_rate_rad_s: float = 0.0
+    exp: float = 0.0
 
     @classmethod
     def from_config(cls, cfg: LevelConfig, eid: int) -> "Player":
@@ -62,4 +63,22 @@ class Player(Entity):
             max_speed=float(PLAYER_MAX_SPEED[tier]),
             accel=PLAYER_ACCEL,
             turn_rate_rad_s=PLAYER_TURN_RATE,
+            exp=0.0,
         )
+
+    def grow_to(self, new_tier: int) -> None:
+        """把玩家升到 ``new_tier``，同步 ``radius`` / ``max_speed``（按 tier→table）。
+
+        ``accel`` / ``turn_rate_rad_s`` 在 MVP 阶段非 tier→table（fish-doc/06 §2
+        只给单值），故不更新。``new_tier`` 会被夹到 ``[0, TIER_MAX]``。
+        """
+        from fish.config.constants import TIER_MAX
+
+        nt = int(new_tier)
+        if nt < 0:
+            nt = 0
+        elif nt > TIER_MAX:
+            nt = TIER_MAX
+        self.tier = nt
+        self.radius = float(PLAYER_RADIUS[nt])
+        self.max_speed = float(PLAYER_MAX_SPEED[nt])

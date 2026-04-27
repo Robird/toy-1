@@ -22,9 +22,12 @@ from toy_engine.input import InputFrame
 from toy_engine.rng import SeededRng
 
 from fish.ai.fish_ai import FishAI
+from fish.config.constants import GROWTH_REWARD
 from fish.config.level_config import LevelConfig
 from fish.entities.fish import Fish
 from fish.entities.player import Player
+from fish.systems.collision import CollisionSystem
+from fish.systems.growth import GrowthSystem
 from fish.systems.movement import MovementSystem
 from fish.systems.spawner import Spawner
 
@@ -150,6 +153,19 @@ class World:
         self._movement = MovementSystem()
         self._fish_ai = FishAI()
         self._spawner = Spawner(self, rng.spawn("spawner"))
+        self._collision = CollisionSystem()
+        self._growth = GrowthSystem()
+
+        # 业务统计计数器（snapshot 暴露；M3-10 metrics 适配器再消费）
+        self.stats: dict[str, int] = {
+            "fish_eaten_count": 0,
+            "fish_eaten_tier1": 0,
+            "fish_eaten_tier2": 0,
+            "fish_eaten_tier3": 0,
+            "fish_eaten_tier4": 0,
+            "player_grow_count": 0,
+            "death_cause_tier": -1,
+        }
 
         # 关卡总时长（仅供 ``is_finished`` 占位判定使用）。
         # （留在末尾，避免与 system 初始化顺序耦合。）
@@ -169,22 +185,75 @@ class World:
     def step(self, dt: float, input_frame: InputFrame) -> None:
         """推进一帧。
 
-        M3-04 起调用顺序固定为：spawner → fish_ai（按 eid 升序） →
-        movement（玩家+所有 fish）→ 计时器累加。该顺序保证 snapshot_hash
-        在相同 seed 下逐帧可重现（契约 #3）。
+        M3-05 起调用顺序固定为：
+          spawner → fish_ai（按 eid 升序） → movement → collision → growth
+          → 死实体清理 → 计时器累加。
+
+        终态写入后（``game_result is not None``）后续 step 只推进计时器，
+        不再触发系统逻辑，保证「DEAD 后再 step 不崩溃，game_result 不会回退」。
         """
         self.last_input_frame = input_frame
         self.last_effective_dt = float(dt)
         dt_f = float(dt)
 
-        self._spawner.step(self, dt_f)
-        # AI 按 eid 升序遍历，避免 list 顺序变化影响决定性
-        for fish in sorted(self.fishes, key=lambda f: f.eid):
-            self._fish_ai.step(fish, self, dt_f)
-        self._movement.step(self, dt_f)
+        if self.game_result is None:
+            self._spawner.step(self, dt_f)
+            # AI 按 eid 升序遍历，避免 list 顺序变化影响决定性
+            for fish in sorted(self.fishes, key=lambda f: f.eid):
+                self._fish_ai.step(fish, self, dt_f)
+            self._movement.step(self, dt_f)
+            self._collision.step(self, dt_f)
+            self._growth.step(self, dt_f)
+            self._cleanup_dead()
 
         self.frame_count += 1
         self.elapsed_s += float(dt)
+
+    # ------------------------------------------------------------------
+    # 业务 hook（CollisionSystem / GrowthSystem 调用；M3-09 手感粒子接同点）
+    # ------------------------------------------------------------------
+
+    def on_fish_eaten(self, player: Player, fish: Fish) -> None:
+        """玩家吃掉一条 fish：累加 exp + 计数。
+
+        EXP 表来自 fish-doc/mvp/01-core-loop.md §2 的 ``GROWTH_REWARD``
+        ``{0:1, 1:2, 2:5, 3:12, 4:30}``。fish.tier 限定在 [1, 4]，索引安全。
+        """
+        player.exp += float(GROWTH_REWARD[fish.tier])
+        self.stats["fish_eaten_count"] += 1
+        key = f"fish_eaten_tier{int(fish.tier)}"
+        if key in self.stats:
+            self.stats[key] += 1
+
+    def on_player_eaten(self, fish: Fish) -> None:
+        """玩家被 fish 吃：写入 DEAD 终态，标记 player.alive=False。
+
+        终态一经写入不会回退；后续 step 只推进计时器。
+        """
+        if self.game_result is not None:
+            return
+        self.game_result = GameResult.DEAD
+        self.player.alive = False
+        self.stats["death_cause_tier"] = int(fish.tier)
+
+    def on_player_grow(self, old_tier: int, new_tier: int) -> None:
+        """玩家跨过 TIER_THRESHOLDS 升级：仅 +1 计数；M3-09 接手感钩子。"""
+        self.stats["player_grow_count"] += 1
+
+    # ------------------------------------------------------------------
+    # 死实体清理
+    # ------------------------------------------------------------------
+
+    def _cleanup_dead(self) -> None:
+        """过滤掉 ``alive=False`` 的 fish 并重建 entities。
+
+        player 即使 alive=False（DEAD 后）也始终保留在 entities 中，便于
+        snapshot / render 显示「死亡瞬间」状态。
+        """
+        live_fishes = [f for f in self.fishes if f.alive]
+        if len(live_fishes) != len(self.fishes):
+            self.fishes = live_fishes
+            self.entities = [self.player, *live_fishes]
 
     def snapshot(self) -> dict:
         """返回当前世界的只读快照（dict 形态）。
@@ -204,10 +273,13 @@ class World:
         ents = sorted(self.entities, key=lambda e: e.eid)
         return {
             "player_pos": (float(self.player.pos.x), float(self.player.pos.y)),
+            "player_tier": int(self.player.tier),
+            "player_exp": float(self.player.exp),
             "frame_count": self.frame_count,
             "elapsed_s": self.elapsed_s,
             "entities": [self._entity_snapshot(e) for e in ents],
             "game_result": self.game_result.name if self.game_result is not None else None,
+            "stats": dict(self.stats),
         }
 
     # ------------------------------------------------------------------
