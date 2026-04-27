@@ -1,11 +1,11 @@
-"""fish/systems/spawner.py — 普通鱼刷新系统（M3-04）。
+"""fish/systems/spawner.py — 普通鱼刷新系统（M3-04 / M3-06 升级）。
 
 实现 fish-doc/mvp/02-fish-ecosystem.md §4 的"按 population_target 刷新到屏幕
-外缘"的基础版。**不**做 Boss 刷新（M3-07）；**不**做 §4 末尾的"屏内 0 可吃
-目标 → 强制就近 spawn"硬约束兜底（生成器层面的事，留 M3-06）。
+外缘"的基础版。**不**做 Boss 刷新（M3-07）。
 
-阶段切换由 LevelDirector（M3-06）接入。本步先用
-``cfg.phases[Phase.WARMUP].population_target`` 作占位。
+M3-06 起，``population_target`` 从 ``world.director.get_active_population_target()``
+查询，跟随 LevelDirector 的当前阶段（BOSS 阶段返回全 0，抑制普通鱼新刷）。
+若 ``world.director`` 不存在（极少数测试 fixture），回退到 WARMUP 配置。
 """
 
 from __future__ import annotations
@@ -57,9 +57,14 @@ class Spawner:
             return
         self._time_since_last_check = 0.0
 
-        # TODO M3-06：接入 LevelDirector 取当前阶段的 population_target；
-        # 当前固定用 WARMUP（保留首阶段语义：仅 Tier-1）。
-        target = world.config.phases[Phase.WARMUP].population_target
+        # M3-06：从 LevelDirector 查询当前阶段的 population_target；
+        # BOSS 阶段返回全 0 → 抑制普通鱼新刷。无 director（旧测试 fixture）则
+        # 回退到 WARMUP 占位，保持原行为。
+        director = getattr(world, "director", None)
+        if director is not None:
+            target = director.get_active_population_target()
+        else:
+            target = world.config.phases[Phase.WARMUP].population_target
 
         # 当前每 tier 在场计数
         counts: dict[int, int] = {t: 0 for t in target}

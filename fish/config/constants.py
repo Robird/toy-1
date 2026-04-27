@@ -182,3 +182,14 @@ BOSS_APPEAR_TIME_RANGE_S: Final[tuple[float, float]] = (25.0, 60.0)
 # 单 Phase 内 Tier-4 在场上限（硬约束 #2）
 PHASE_TIER4_POPULATION_MAX: Final[int] = 3
 # 见 fish-doc/mvp/04-level-generator.md §5
+
+# 校验失败重试上限（见 fish-doc/mvp/04-level-generator.md §3）
+LEVEL_GEN_MAX_RETRIES: Final[int] = 10
+# 见 fish-doc/mvp/04-level-generator.md §3：「不通过则重采最多 N 次」
+
+# BOSS / REVENGE 阶段为事件驱动；以下为 LevelDirector 在事件未触发时的兜底
+# 超时（避免 bot 在 Boss 未实现的早期版本里永远卡住）。
+# 见 fish-doc/mvp/04-level-generator.md §4 表（BOSS/REVENGE 时长「直到 VICTORY/DEAD」），
+# 以及 fish-doc/mvp/01-core-loop.md §4 (TIMEOUT_S=180)。
+BOSS_PHASE_TIMEOUT_S: Final[float] = 60.0
+REVENGE_PHASE_TIMEOUT_S: Final[float] = 30.0

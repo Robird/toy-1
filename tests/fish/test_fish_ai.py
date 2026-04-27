@@ -277,12 +277,21 @@ class TestSpawner:
                 )
 
     def test_eventually_reaches_warmup_target(self) -> None:
-        """跑足够长时间后，Tier-1 的在场数应当达到 WARMUP target（=8）。"""
+        """跑足够长时间后，Tier-1 的在场数应当达到 WARMUP target（=8）。
+
+        M3-06 起 LevelDirector 会在 WARMUP duration（12~18s）后切到 PRESSURE，
+        改变 population_target；此处把 spin-up 限制在 WARMUP 阶段内。
+        """
+        from fish.config.constants import Phase as _P  # 避免污染顶层 import
+
         world = _new_world(seed=11)
-        target = world.config.phases[Phase.WARMUP].population_target
+        target = world.config.phases[_P.WARMUP].population_target
         inp = _NullInput()
-        for _ in range(2000):  # ~33s，足够 spawner 拉满
+        # WARMUP min=12s 内已远足以填满 8 条 Tier-1（每 0.5s spawn 1 条）
+        # 限制在 8s 以内，确保未触发 WARMUP→PRESSURE 转换。
+        for _ in range(int(8.0 / DT)):
             world.step(DT, inp.poll(world.snapshot()))
+        assert world.director.current_phase == _P.WARMUP
         counts: dict[int, int] = {t: 0 for t in target}
         for f in world.fishes:
             if f.alive:

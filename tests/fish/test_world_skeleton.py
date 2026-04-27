@@ -156,11 +156,13 @@ class TestIsFinished:
     def test_initial_not_finished(self, world: World) -> None:
         assert world.is_finished() is False
 
-    def test_finished_when_total_duration_reached(self, world: World) -> None:
+    def test_not_finished_just_by_elapsed_s(self, world: World) -> None:
+        # M3-06 起裁决 #4 已落实：is_finished 仅看 game_result，不再用
+        # "elapsed_s ≥ Σ phase.duration_s" fallback。
         total = sum(p.duration_s for p in world.config.phases.values())
-        assert total > 0.0  # 默认 LevelConfig 应有正向时长
+        assert total > 0.0
         world.elapsed_s = total
-        assert world.is_finished() is True
+        assert world.is_finished() is False
 
     def test_finished_when_game_result_set(self, world: World) -> None:
         world.game_result = GameResult.VICTORY
@@ -192,13 +194,14 @@ class TestGameLoopIntegration:
         assert world.frame_count >= N
         assert world.elapsed_s >= N * DT - 1e-9
 
-    def test_gameloop_stops_at_total_duration(self, cfg: LevelConfig) -> None:
-        # 用一个极小 total_duration 验证 is_finished 触发循环退出。
+    def test_gameloop_stops_when_game_result_set(self, cfg: LevelConfig) -> None:
+        # M3-06 起以 ``game_result`` 为唯一终态信号；手动写入后下一轮
+        # ``run_headless`` 必须即刻退出。
         w = World(cfg, SeededRng(seed=cfg.seed))
-        # 直接缩短：把 _total_duration_s 设小，模拟 LevelDirector 之外的早停。
-        w._total_duration_s = 5 * DT
-        loop = GameLoop(world=w, input_source=_NullInput())
+        loop = GameLoop(world=w, input_source=_NullInput(), max_sim_seconds=10.0)
+        # 先跑几帧再设终态，验证不会一直跑到 10s
+        loop.step_once(3)
+        w.game_result = GameResult.VICTORY
         loop.run_headless()
         assert w.is_finished() is True
-        # 至少推进到触发上限的那一帧
-        assert w.frame_count >= 5
+        assert w.frame_count == 3  # game_result 后 run_headless 不再推进

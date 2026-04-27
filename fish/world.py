@@ -28,6 +28,7 @@ from fish.entities.fish import Fish
 from fish.entities.player import Player
 from fish.systems.collision import CollisionSystem
 from fish.systems.growth import GrowthSystem
+from fish.systems.level_director import LevelDirector
 from fish.systems.movement import MovementSystem
 from fish.systems.spawner import Spawner
 
@@ -155,6 +156,9 @@ class World:
         self._spawner = Spawner(self, rng.spawn("spawner"))
         self._collision = CollisionSystem()
         self._growth = GrowthSystem()
+        # M3-06：阶段调度器；必须在 _spawner 之后构造（spawner 构造时也会读
+        # director 但用 getattr 兼容；这里再显式赋一遍）
+        self.director: LevelDirector = LevelDirector(self)
 
         # 业务统计计数器（snapshot 暴露；M3-10 metrics 适配器再消费）
         self.stats: dict[str, int] = {
@@ -185,9 +189,9 @@ class World:
     def step(self, dt: float, input_frame: InputFrame) -> None:
         """推进一帧。
 
-        M3-05 起调用顺序固定为：
-          spawner → fish_ai（按 eid 升序） → movement → collision → growth
-          → 死实体清理 → 计时器累加。
+        M3-06 起调用顺序固定为：
+          director → spawner → fish_ai（按 eid 升序） → movement → collision
+          → growth → 死实体清理 → 计时器累加。
 
         终态写入后（``game_result is not None``）后续 step 只推进计时器，
         不再触发系统逻辑，保证「DEAD 后再 step 不崩溃，game_result 不会回退」。
@@ -196,6 +200,10 @@ class World:
         self.last_effective_dt = float(dt)
         dt_f = float(dt)
 
+        if self.game_result is None:
+            # director 必须最先 step：决定本帧 spawner 的 population_target，
+            # 也可能在此处直接写入 game_result（TIMEOUT / VICTORY 兜底）。
+            self.director.step(self, dt_f)
         if self.game_result is None:
             self._spawner.step(self, dt_f)
             # AI 按 eid 升序遍历，避免 list 顺序变化影响决定性
@@ -277,6 +285,8 @@ class World:
             "player_exp": float(self.player.exp),
             "frame_count": self.frame_count,
             "elapsed_s": self.elapsed_s,
+            "phase": self.director.current_phase.name,
+            "phase_elapsed_s": float(self.director.phase_elapsed_s),
             "entities": [self._entity_snapshot(e) for e in ents],
             "game_result": self.game_result.name if self.game_result is not None else None,
             "stats": dict(self.stats),
@@ -349,14 +359,9 @@ class World:
     def is_finished(self) -> bool:
         """是否到达终态。
 
-        M3-02 占位规则：
-          - ``game_result`` 已写入 → True
-          - ``elapsed_s >= total_duration``（WARMUP+PRESSURE 时长之和）→ True
-
-        正式终态判定（DEAD / VICTORY / TIMEOUT 三类）由 M3-05 / M3-07 接入。
+        M3-06 起（裁决 #4 已落实）：仅以 ``game_result is not None`` 为准。
+        终态写入由 ``LevelDirector`` 负责（VICTORY/TIMEOUT）以及
+        ``CollisionSystem``（DEAD）。``M3-02`` 时期的「elapsed_s ≥ Σ phase
+        duration_s」fallback 已废止——线性时长的概念已被四阶段调度器取代。
         """
-        if self.game_result is not None:
-            return True
-        if self._total_duration_s > 0.0 and self.elapsed_s >= self._total_duration_s:
-            return True
-        return False
+        return self.game_result is not None
