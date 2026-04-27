@@ -14,11 +14,8 @@
 
 from __future__ import annotations
 
-import gzip as _gzip
-import json
 import math
 import os
-import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass
 from os import PathLike
@@ -375,58 +372,19 @@ class ReplayInput:
         *,
         strict_end: bool = False,
     ) -> "tuple[Any, ReplayInput]":
-        """读取 Recorder 录像 JSON / JSON.gz 并展开稀疏帧为稠密序列。
+        """读取 Recorder 录像 JSON / JSON.gz，返回 ``(config, ReplayInput)``。
 
-        返回 ``(level_config_payload, replay_input)``。出于解耦考虑（Recorder
-        尚未实现），``level_config_payload`` 即文件 ``config`` 字段的原始 dict；
-        Recorder 落地后调用方应改用 ``Recorder.load(path)``。
+        薄包装：所有解析、hash 校验、稀疏 → 稠密展开均委托给
+        :class:`toy_engine.recorder.Recorder`。返回的 ``config`` 即
+        ``Recording.level_config``（无 deserializer 时为原始 dict）；调用方
+        若需要 ``Recording`` 的其它字段（``seed``、``meta`` 等），应直接使用
+        ``Recorder.load(path)``。
         """
-        with open(path, "rb") as fh:
-            head = fh.read(2)
-            fh.seek(0)
-            if head == b"\x1f\x8b":
-                with _gzip.open(fh, "rt", encoding="utf-8") as gz:
-                    data = json.load(gz)
-            else:
-                data = json.load(fh)
+        # 延迟 import，打破 ``input <-> recorder`` 循环依赖。
+        from toy_engine.recorder import Recorder
 
-        if not isinstance(data, dict) or "frames" not in data:
-            raise ValueError(
-                f"recording at {os.fspath(path)!r} is not a valid recording dict"
-            )
-
-        sparse = data["frames"]
-        if not isinstance(sparse, list):
-            raise ValueError("recording 'frames' must be a list")
-
-        # 决定总长度
-        meta = data.get("meta") or {}
-        duration = meta.get("duration_frames") if isinstance(meta, dict) else None
-        if duration is None:
-            if not sparse:
-                duration = 0
-            else:
-                duration = int(sparse[-1]["i"]) + 1
-            warnings.warn(
-                "recording missing meta.duration_frames; using last sparse frame "
-                "index + 1 — last input may have been intended to persist longer.",
-                stacklevel=2,
-            )
-        duration = int(duration)
-        if duration < 0:
-            raise ValueError(f"duration_frames must be >= 0, got {duration}")
-
-        dense: list[InputFrame] = []
-        last_frame = InputFrame(desired_dir=None, dash=False)
-        sparse_iter = iter(sparse)
-        next_change = next(sparse_iter, None)
-        for i in range(duration):
-            while next_change is not None and int(next_change["i"]) == i:
-                last_frame = InputFrame.from_wire(next_change)
-                next_change = next(sparse_iter, None)
-            dense.append(last_frame)
-
-        return data.get("config"), cls(dense, strict_end=strict_end)
+        rec = Recorder.load(path)
+        return rec.level_config, cls(rec.frames, strict_end=strict_end)
 
 
 # ---------------------------------------------------------------------------

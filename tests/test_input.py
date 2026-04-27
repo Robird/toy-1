@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from dataclasses import dataclass
 
 import pytest
+
+
+def _hash_config(cfg) -> str:
+    """Mirror of toy_engine.recorder._canonical_hash for test fixtures."""
+    canonical = json.dumps(
+        cfg, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+    )
+    return "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 import toy_engine.input as inp
 from toy_engine.geom import Vec2
@@ -373,11 +382,12 @@ class TestReplayInput:
 
     def test_from_recording_expands_sparse_gaps(self, tmp_path) -> None:
         # Sparse: frame 0 idle, frame 2 right, frame 5 up. duration=8
+        cfg = {"foo": 1}
         recording = {
             "engine_version": "0.1.0",
             "seed": 123,
-            "config_hash": "sha256:00",
-            "config": {"foo": 1},
+            "config_hash": _hash_config(cfg),
+            "config": cfg,
             "meta": {"duration_frames": 8},
             "frames": [
                 {"i": 0, "dir": None, "dash": False},
@@ -400,12 +410,15 @@ class TestReplayInput:
             got = replay.poll(None)
             assert got.desired_dir == want, f"frame {i}: got {got.desired_dir}"
 
-    def test_from_recording_missing_duration_warns(self, tmp_path) -> None:
+    def test_from_recording_missing_duration_raises(self, tmp_path) -> None:
+        # Recorder.load enforces meta.duration_frames; missing field is an error,
+        # not a warning (04-recorder.md §3).
+        cfg = {"a": 1}
         recording = {
             "engine_version": "0.1.0",
             "seed": 1,
-            "config_hash": "sha256:00",
-            "config": None,
+            "config_hash": _hash_config(cfg),
+            "config": cfg,
             "meta": {},  # no duration_frames
             "frames": [
                 {"i": 0, "dir": None, "dash": False},
@@ -414,19 +427,18 @@ class TestReplayInput:
         }
         path = tmp_path / "rec.json"
         path.write_text(json.dumps(recording), encoding="utf-8")
-        with pytest.warns(UserWarning, match="duration_frames"):
-            _, replay = ReplayInput.from_recording(path)
-        # Falls back to last_index + 1 = 4
-        assert len(replay) == 4
+        with pytest.raises(ValueError, match="duration_frames"):
+            ReplayInput.from_recording(path)
 
     def test_from_recording_gzip(self, tmp_path) -> None:
         import gzip
 
+        cfg: dict = {}
         recording = {
             "engine_version": "0.1.0",
             "seed": 1,
-            "config_hash": "sha256:00",
-            "config": {},
+            "config_hash": _hash_config(cfg),
+            "config": cfg,
             "meta": {"duration_frames": 2},
             "frames": [{"i": 0, "dir": [1.0, 0.0], "dash": False}],
         }
