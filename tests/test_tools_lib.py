@@ -14,7 +14,7 @@ from toy_engine.tools_lib import (
     load_factory,
     run_single_headless,
 )
-from tests._mock_factory import DET_FACTORY, MockFactory
+from tests._mock_factory import DET_FACTORY, MetricsBindingMockFactory, MockFactory
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +162,58 @@ def test_run_single_headless_rejects_non_steppable():
             difficulty=0.5,
             max_sim_seconds=1.0,
         )
+
+
+# ---------------------------------------------------------------------------
+# EQ12: optional ``bind_metrics`` hook
+# ---------------------------------------------------------------------------
+
+
+def test_bind_metrics_hook_is_called_once():
+    factory = MetricsBindingMockFactory(max_frames=5)
+    env, _ = run_single_headless(
+        factory,
+        seed=11,
+        difficulty=0.5,
+        max_sim_seconds=10.0,
+    )
+    # bind_metrics fired exactly once with (world, MetricsCollector).
+    assert len(factory.bound_calls) == 1
+    bound_world, bound_metrics = factory.bound_calls[0]
+    assert bound_world is not None
+    assert hasattr(bound_metrics, "tick")
+    # World still finished normally.
+    assert env["result"] == "DONE"
+
+
+def test_bind_metrics_path_does_not_double_tick():
+    """Bound path: only the world ticks; tools must not tick again."""
+    factory = MetricsBindingMockFactory(max_frames=5)
+    env, _ = run_single_headless(
+        factory,
+        seed=11,
+        difficulty=0.5,
+        max_sim_seconds=10.0,
+    )
+    # World stepped 5 times and called tick once per step → duration_frames == 5,
+    # not 10 (which is what double-ticking would yield).
+    assert env["duration_frames"] == 5
+    # Sanity: the world also recorded one ``step`` event per frame.
+    assert env["events"]["step"]["count"] == 5
+
+
+def test_legacy_factory_without_bind_metrics_still_ticks():
+    """Backward compat: factories lacking ``bind_metrics`` go through the old
+    on_frame tick path unchanged."""
+    factory = MockFactory(max_frames=7)
+    assert not hasattr(factory, "bind_metrics")
+    env, _ = run_single_headless(
+        factory,
+        seed=2,
+        difficulty=0.5,
+        max_sim_seconds=10.0,
+    )
+    assert env["duration_frames"] == 7
 
 
 # ---------------------------------------------------------------------------

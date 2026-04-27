@@ -54,6 +54,17 @@ class GameFactory(Protocol):
 
     ``@runtime_checkable`` 仅做粗粒度 ``isinstance`` 防呆；签名一致性靠类型
     检查与单测保证。
+
+    Optional hook (未加入 Protocol 本体以保持 ``isinstance`` 向后兼容)：
+
+    .. code-block:: python
+
+        def bind_metrics(self, world: Any, metrics: MetricsCollector) -> None:
+            ...
+
+    若 factory 提供该方法，:func:`run_single_headless` 将在创建世界后、循环启动前
+    调用一次，同时将 ``metrics.tick(dt)`` 的责任交给业务侧（避免重复 tick）。
+    未提供时路径与以前完全一致。
     """
 
     def make_level_config(self, *, seed: int, difficulty: float) -> Any: ...  # pragma: no cover
@@ -192,6 +203,13 @@ def run_single_headless(
     metrics.set_scalar("seed", seed, top_level=True)
     metrics.set_scalar("difficulty", difficulty, top_level=True)
 
+    # Optional hook: 业务接管 metrics tick 所有权 (EQ12 / 08-tools.md §2)
+    bind = getattr(factory, "bind_metrics", None)
+    business_owns_tick = False
+    if callable(bind):
+        bind(world, metrics)
+        business_owns_tick = True
+
     recorder: Recorder | None = None
     if record_path is not None:
         recorder = Recorder(
@@ -202,7 +220,8 @@ def run_single_headless(
         input_source = _RecordingInputSource(input_source, recorder)
 
     def _on_frame(snapshot: Any) -> None:
-        metrics.tick(dt)
+        if not business_owns_tick:
+            metrics.tick(dt)
         if on_frame_extra is not None:
             on_frame_extra(snapshot)
 

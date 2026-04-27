@@ -15,6 +15,7 @@ from toy_engine.geom import Vec2
 from toy_engine.input import InputFrame, ReplayInput
 from toy_engine.recorder import (
     ConfigDriftError,
+    ConfigDriftWarning,
     EmptyRecordingError,
     EngineVersionWarning,
     Recorder,
@@ -629,3 +630,58 @@ class TestEndToEndReplay:
         assert loaded.frames[0].desired_dir.x == 0.6
         assert loaded.frames[0].desired_dir.y == 0.8
         assert loaded.frames[1].dash is True
+
+
+# ---------------------------------------------------------------------------
+# EQ11: ``Recorder.load(strict_hash=False)`` tolerates config drift.
+# ---------------------------------------------------------------------------
+
+
+class TestStrictHash:
+    def _drifted(self, tmp_path: Path) -> tuple[Path, str, str]:
+        rec = Recorder({"seed": 1, "w": 100})
+        _fill_frames(rec)
+        path = tmp_path / "r.json"
+        rec.save(path)
+
+        data = json.loads(path.read_text(encoding="utf-8"))
+        original_hash = data["config_hash"]
+        # Tamper config so on-disk hash no longer matches recomputed one.
+        data["config"]["w"] = 999
+        path.write_text(json.dumps(data), encoding="utf-8")
+        from toy_engine.recorder import _canonical_hash
+
+        recomputed = _canonical_hash(data["config"])
+        assert recomputed != original_hash
+        return path, original_hash, recomputed
+
+    def test_strict_hash_false_warns_and_loads(self, tmp_path: Path) -> None:
+        path, file_hash, recomputed = self._drifted(tmp_path)
+        with pytest.warns(ConfigDriftWarning):
+            loaded = Recorder.load(path, strict_hash=False)
+        # config_hash field reflects the recomputed canonical hash, matching the
+        # actual ``config`` value loaded into memory.
+        assert loaded.config_hash == recomputed
+        # file_config_hash retains the original on-disk value for diagnostics.
+        assert loaded.file_config_hash == file_hash
+
+    def test_strict_hash_default_still_raises(self, tmp_path: Path) -> None:
+        path, _, _ = self._drifted(tmp_path)
+        with pytest.raises(ConfigDriftError):
+            Recorder.load(path)
+
+    def test_strict_hash_false_no_warn_when_hash_matches(
+        self, tmp_path: Path
+    ) -> None:
+        rec = Recorder({"seed": 1, "w": 100})
+        _fill_frames(rec)
+        path = tmp_path / "r.json"
+        rec.save(path)
+
+        import warnings as _w
+
+        with _w.catch_warnings():
+            _w.simplefilter("error", ConfigDriftWarning)
+            loaded = Recorder.load(path, strict_hash=False)
+        assert loaded.file_config_hash is None
+        assert loaded.config_hash == rec.config_hash

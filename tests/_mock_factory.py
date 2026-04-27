@@ -105,3 +105,48 @@ SHORT_FACTORY = MockFactory(max_frames=10)
 # Convenience singleton for end-to-end smoke tests: deterministic, finishes quickly
 # so subprocess-driven CLI runs stay fast.
 MOCK_FACTORY = MockFactory(max_frames=8)
+
+
+# ---------------------------------------------------------------------------
+# EQ12: factory that opts in to ``bind_metrics`` and owns ``metrics.tick``.
+# ---------------------------------------------------------------------------
+
+
+class _BoundMetricsWorld(MockWorld):
+    """Like :class:`MockWorld`, but ``step`` advances the bound metrics clock.
+
+    This mirrors what a real business-side world would do once it has been
+    handed a :class:`MetricsCollector` via ``GameFactory.bind_metrics``.
+    """
+
+    def __init__(self, *, seed: int, max_frames: int | None) -> None:
+        super().__init__(seed=seed, max_frames=max_frames)
+        self._metrics = None  # type: ignore[var-annotated]
+
+    def bind_metrics(self, metrics) -> None:  # type: ignore[no-untyped-def]
+        self._metrics = metrics
+
+    def step(self, dt: float, input_frame) -> None:  # type: ignore[no-untyped-def]
+        super().step(dt, input_frame)
+        if self._metrics is not None:
+            self._metrics.tick(dt)
+            self._metrics.record_event("step")
+
+
+class MetricsBindingMockFactory(MockFactory):
+    """:class:`MockFactory` that implements the optional ``bind_metrics`` hook.
+
+    Tests can inspect :attr:`bound_calls` (list of ``(world, metrics)`` tuples)
+    to assert that ``run_single_headless`` invoked the hook exactly once.
+    """
+
+    def __init__(self, *, max_frames: int | None = None) -> None:
+        super().__init__(max_frames=max_frames)
+        self.bound_calls: list[tuple[Any, Any]] = []
+
+    def make_world(self, *, level_config: dict, seed: int) -> _BoundMetricsWorld:  # noqa: ARG002
+        return _BoundMetricsWorld(seed=seed, max_frames=self._max_frames)
+
+    def bind_metrics(self, world: Any, metrics: Any) -> None:
+        world.bind_metrics(metrics)
+        self.bound_calls.append((world, metrics))

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import enum
 import json
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -535,8 +536,11 @@ def test_constructor_validates_args() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.perf
 def test_perf_budget_100_runs_under_2s() -> None:
     import time
+    if sys.gettrace() is not None:
+        pytest.skip("tracing active (coverage/debugger); perf budget not meaningful")
     t0 = time.perf_counter()
     for _ in range(100):
         m = MetricsCollector()

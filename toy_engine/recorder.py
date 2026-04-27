@@ -37,6 +37,7 @@ __all__ = [
     "Recorder",
     "Recording",
     "ConfigDriftError",
+    "ConfigDriftWarning",
     "EngineVersionWarning",
     "EmptyRecordingError",
     "to_jsonable",
@@ -69,6 +70,10 @@ class ConfigDriftError(RuntimeError):
 
 class EngineVersionWarning(UserWarning):
     """录像与当前引擎主版本号不一致；仅警告，不阻塞。"""
+
+
+class ConfigDriftWarning(UserWarning):
+    """``Recorder.load(strict_hash=False)`` 时 ``config_hash`` 不匹配的告警。"""
 
 
 class EmptyRecordingError(RuntimeError):
@@ -171,6 +176,10 @@ class Recording(Generic[ConfigT]):
     config_hash: str
     engine_version: str
     meta: dict = field(default_factory=dict)
+    #: 文件中读到的原始 ``config_hash``；与 :attr:`config_hash` 不一致时
+    #: 说明加载时使用了 ``strict_hash=False`` 容忍了漂移，仅作 in-memory 诊断，
+    #: 不参与 ``save`` / ``to_wire``。默认 ``None`` 表示与 :attr:`config_hash` 相同。
+    file_config_hash: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -358,6 +367,8 @@ class Recorder(Generic[ConfigT]):
         cls,
         path: str | PathLike[str],
         config_deserializer: Callable[[dict], ConfigT] | None = None,
+        *,
+        strict_hash: bool = True,
     ) -> "Recording[ConfigT]":
         with open(path, "rb") as fh:
             head = fh.read(2)
@@ -418,8 +429,19 @@ class Recorder(Generic[ConfigT]):
                 f"config_hash must be str, got {type(file_hash).__name__}"
             )
         recomputed = _canonical_hash(raw_config)
+        effective_hash = file_hash
+        diagnostic_file_hash: str | None = None
         if recomputed != file_hash:
-            raise ConfigDriftError(file_hash, recomputed)
+            if strict_hash:
+                raise ConfigDriftError(file_hash, recomputed)
+            warnings.warn(
+                f"ConfigDriftError tolerated (strict_hash=False): "
+                f"file={file_hash!r}, recomputed={recomputed!r}",
+                ConfigDriftWarning,
+                stacklevel=2,
+            )
+            effective_hash = recomputed
+            diagnostic_file_hash = file_hash
 
         meta = data["meta"]
         if not isinstance(meta, dict):
@@ -503,7 +525,8 @@ class Recorder(Generic[ConfigT]):
             level_config=level_config,
             seed=seed,
             frames=dense,
-            config_hash=file_hash,
+            config_hash=effective_hash,
             engine_version=engine_version,
             meta=meta,
+            file_config_hash=diagnostic_file_hash,
         )

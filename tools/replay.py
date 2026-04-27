@@ -1,15 +1,15 @@
 #!/usr/bin/env python
-"""tools/replay.py — see toy-engine/mvp/08-tools.md §6.
+"""tools/replay.py - see toy-engine/mvp/08-tools.md section 6.
 
-读取 ``Recorder`` 录像 JSON / JSON.gz，构建 :class:`ReplayInput` 驱动
-``GameLoop``。默认 / ``--render`` 走 GUI（``run_realtime``），``--headless`` 无窗口。
-``--force`` 把 ``ConfigDriftError`` 降级为 warning 并继续。
+Read a Recorder JSON / JSON.gz, build a ReplayInput, drive a GameLoop.
+Default / --render uses GUI (run_realtime); --headless runs without a window.
+--force downgrades ConfigDriftError to ConfigDriftWarning and continues
+(via Recorder.load(strict_hash=False)).
 """
 
 from __future__ import annotations
 
 import argparse
-import gzip as _gzip
 import json
 import sys
 import warnings
@@ -24,6 +24,7 @@ from toy_engine.loop import GameLoop  # noqa: E402
 from toy_engine.metrics import MetricsCollector  # noqa: E402
 from toy_engine.recorder import (  # noqa: E402
     ConfigDriftError,
+    ConfigDriftWarning,
     Recorder,
     Recording,
 )
@@ -45,67 +46,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _force_load(path: Path, factory) -> Recording:
-    """Bypass ``config_hash`` 一致性校验，按文件原样构造 :class:`Recording`。
-
-    仅在 ``--force`` 下走此路径；保留 ``Recorder.load`` 的其它结构校验是为
-    避免重复实现解析逻辑：先做一次"宽松读"，hash 不匹配就在内存里把
-    file 端 hash 重写为 canonical hash 后写入临时文件，再交回
-    ``Recorder.load``。这样仍能复用稀疏→稠密展开、字段白名单等所有校验。
-    """
-    import os
-
-    from toy_engine.recorder import _canonical_hash  # 内部 helper
-
-    with open(path, "rb") as fh:
-        head = fh.read(2)
-        fh.seek(0)
-        if head == b"\x1f\x8b":
-            with _gzip.open(fh, "rt", encoding="utf-8") as gz:
-                data = json.load(gz)
-        else:
-            data = json.load(fh)
-
-    if "config" not in data or "config_hash" not in data:
-        raise SystemExit(
-            "recording file is missing required fields; --force cannot recover"
-        )
-    data["config_hash"] = _canonical_hash(data["config"])
-
-    # 写到 tmp 文件再交给 Recorder.load 复用所有校验逻辑
-    import tempfile
-
-    suffix = ".json.gz" if str(path).lower().endswith(".gz") else ".json"
-    tmp = tempfile.NamedTemporaryFile("wb", suffix=suffix, delete=False)
-    tmp_path = tmp.name
-    tmp.close()
-    try:
-        if suffix == ".json.gz":
-            with _gzip.open(tmp_path, "wt", encoding="utf-8") as gz:
-                json.dump(data, gz, ensure_ascii=False)
-        else:
-            with open(tmp_path, "w", encoding="utf-8") as text_fh:
-                json.dump(data, text_fh, ensure_ascii=False)
-        return Recorder.load(tmp_path, config_deserializer=factory.deserialize_config)
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-
-
 def _load_recording(path: Path, factory, force: bool) -> Recording:
-    try:
-        return Recorder.load(path, config_deserializer=factory.deserialize_config)
-    except ConfigDriftError as exc:
-        if not force:
-            raise
-        warnings.warn(
-            f"replay: ignoring ConfigDriftError due to --force: {exc}",
-            RuntimeWarning,
-            stacklevel=1,
+    """Wrap Recorder.load and surface ConfigDriftWarning to stderr."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", ConfigDriftWarning)
+        rec = Recorder.load(
+            path,
+            config_deserializer=factory.deserialize_config,
+            strict_hash=not force,
         )
-        return _force_load(path, factory)
+    for w in caught:
+        warnings.warn(w.message, w.category, stacklevel=1)
+        if issubclass(w.category, ConfigDriftWarning):
+            sys.stderr.write(
+                f"replay: ConfigDriftError tolerated due to --force: {w.message}\n"
+            )
+    return rec
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -160,14 +116,10 @@ def main(argv: list[str] | None = None) -> int:
                 json.dump(env, fh, ensure_ascii=False)
         return 0
 
-    # GUI mode
     loop.run_realtime()
     return 0
 
 
-# Used to silence the unused-import warning on InputFrame in some linters; the
-# real reason it is imported is to keep the public symbol in scope for tools
-# that monkey-patch InputSource implementations during tests.
 _ = InputFrame
 
 
