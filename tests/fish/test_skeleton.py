@@ -88,22 +88,18 @@ def test_level_config_is_frozen() -> None:
         cfg.seed = 42  # type: ignore[misc]
 
 
-def test_main_runs(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    """main() 可被调用，且不会触碰真实显示子系统。"""
-    import builtins
+def test_main_runs(capsys: pytest.CaptureFixture[str]) -> None:
+    """main() 可被调用并完成 headless 30 帧。
 
-    real_import = builtins.__import__
-
-    def fail_on_pygame_import(name: str, *args: object, **kwargs: object) -> object:
-        if name == "pygame" or name.startswith("pygame."):
-            raise AssertionError("fish.main must not import pygame in M3-01 skeleton")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", fail_on_pygame_import)
-
+    M3-02 起 main() 合法地透传依赖到 toy_engine.input（其顶层 import pygame，
+    但仅创建模块对象、不创建 display）。本测试只验证可执行 + 打印骨架字样
+    与一份 snapshot；显式不再禁止 pygame import。
+    """
     from fish.main import main
 
     main()
     captured = capsys.readouterr()
     assert "fish MVP" in captured.out
     assert "skeleton ready" in captured.out
+    assert "frames=30" in captured.out
+    assert "snapshot=" in captured.out
