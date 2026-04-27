@@ -1,18 +1,18 @@
-"""
+﻿"""
 合成大西瓜 (Suika / Merge Balls Game) —— 关卡版
 --------------------------------------
 左右方向键 或 鼠标移动 —— 控制投放位置
-空格键 或 鼠标左键 —— 投放小球；过关画面下按空格进入下一关
+空格键 或 鼠标左键 —— 投放小球；过关后会短暂庆祝并自动进入下一关
 Tab 键 —— 拥有炸弹时切换到炸弹模式（再次按 Tab/右键 退出）
   · 炸弹模式下左键点击将引爆任意球（不加分）
   · 每过一关奖励 1 枚炸弹，可叠加，跨关保留
-Esc —— 优先退出炸弹模式；非炸弹模式下退出游戏
+Esc —— 退出炸弹模式
 R 键 —— Game Over 重试本关；全部通关后从第 1 关重新开始
 
 关卡机制
 --------
 合出"目标水果"即过关，棋盘保留（目标球作为下一关的高级种子）。
-从葡萄一路推进到南瓜，全部 10 关后即"通关胜利"。
+从葡萄一路推进到神秘水果，全部 11 关后即"通关胜利"。
 失败仅重玩当前关，关卡与炸弹进度保留，避免幼儿"全盘皆输"的挫败感。
 """
 
@@ -29,7 +29,7 @@ from font_utils import load_font
 # ──────────────────────────────────────
 # 常量
 # ──────────────────────────────────────
-WIDTH, HEIGHT = 480, 750
+WIDTH, HEIGHT = 600, 800
 FPS = 60
 
 # 物理世界的重力加速度，单位近似为“像素/秒²”。
@@ -126,10 +126,12 @@ BALL_CONFIG = {
     10: (96,  (240, 200, 50),   "蜜瓜",  55),
     11: (110, (50,  200, 50),   "西瓜",  66),
     12: (126, (245, 140, 40),   "南瓜",  78),
+    13: (144, (90,  70,  220),  "神秘水果", 91),
 }
 
-MAX_LEVEL = 12
-SPAWN_MAX_LEVEL = 5     # 投放只出现 1~5 级
+MAX_LEVEL = 13
+SPAWN_MAX_LEVEL = 5     # 随机池的绝对上限仍为 5 级
+SPAWN_LEVEL_BAND = 3    # 当前关卡实际随机范围的宽度（高关会整体上移）
 
 # 颜色
 BG_COLOR        = (255, 248, 230)
@@ -143,7 +145,7 @@ WHITE           = (255, 255, 255)
 # ── 炸弹（Bomb）机制相关 ──
 # 炸弹获取与「过关」绑定：每过一关奖励一枚炸弹（终关胜利不再发放）。
 # 这样发放节奏与关卡节奏一致，幼儿更容易理解，也鼓励"前期攒、后期用"的策略。
-BOMB_PER_STAGE_CLEAR = 1
+BOMB_PER_STAGE_CLEAR = 11
 # 炸弹模式下屏幕内描边（警戒红）。
 BOMB_BORDER_COLOR = (220, 50, 50, 180)
 BOMB_BORDER_THICKNESS = 4
@@ -164,14 +166,15 @@ EXPLOSION_PALETTE = (
 )
 
 # ── 关卡（Stage）机制 ──
-# 每个元素是该关需要合出的目标球等级。从葡萄(Lv3)起步，南瓜(Lv12)作为终关。
+# 每个元素是该关需要合出的目标球等级。从葡萄(Lv3)起步，神秘水果(Lv13)作为终关。
 # 合出该等级的球即过关；下一关棋盘保留，刚合成的目标球作为种子。
-STAGE_TARGETS = (3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
+STAGE_TARGETS = (3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13)
 
 # 过关 / 胜利覆盖层颜色
 STAGE_BANNER_BG = (0, 120, 60, 200)        # 过关：绿色
 VICTORY_BANNER_BG = (200, 140, 30, 220)    # 通关：金色
 STAGE_TEXT_COLOR = (255, 255, 255)
+STAGE_CLEAR_DELAY_FRAMES = 72         # 约 1.2 秒，过关短暂停顿后自动进下一关
 
 
 # ──────────────────────────────────────
@@ -599,6 +602,7 @@ class Game:
             (b.level for b in getattr(self, "balls", [])), default=0)
         self.game_over = False
         self.stage_cleared = False
+        self.stage_clear_frames = 0
         self.victory = False
         self.spawn_x = WIDTH // 2
         self.frame = 0
@@ -698,13 +702,19 @@ class Game:
         return STAGE_TARGETS[self.stage_index]
 
     @property
+    def current_spawn_min_level(self):
+        """当前关卡允许随机出的最低等级。"""
+        return max(1, self.current_spawn_max_level - SPAWN_LEVEL_BAND + 1)
+
+    @property
     def current_spawn_max_level(self):
         """当前关卡允许随机出的最高等级。"""
         return max(1, min(SPAWN_MAX_LEVEL, self.current_target_level - 1))
 
     def _roll_spawn_level(self):
         """按当前关卡的随机池规则生成一个待投放等级。"""
-        return random.randint(1, self.current_spawn_max_level)
+        return random.randint(self.current_spawn_min_level,
+                              self.current_spawn_max_level)
 
     def _check_stage_clear(self, new_level):
         """合并产生新球后调用。若达到目标等级，则触发过关 / 胜利。"""
@@ -717,6 +727,7 @@ class Game:
                 self.audio.set_bgm_volume(0.06)
             else:
                 self.stage_cleared = True
+                self.stage_clear_frames = 0
                 self.snd_stage_clear.play()
                 # 关卡奖励：过一关 +1 炸弹（终关胜利不再发放）
                 self._award_bomb_for_stage_clear()
@@ -796,6 +807,11 @@ class Game:
             # 过关 / 通关画面：物理暂停，仍允许特效继续播放，画面更欢快。
             if self.bomb_mode:
                 self.bomb_mode = False
+            if self.stage_cleared:
+                self.stage_clear_frames += 1
+                if self.stage_clear_frames >= STAGE_CLEAR_DELAY_FRAMES:
+                    self.advance_to_next_stage()
+                    return
             self._update_particles()
             self._update_explosions()
             return
@@ -1137,7 +1153,7 @@ class Game:
         self.screen.blit(t4, t4.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 85)))
 
     def _draw_stage_clear(self):
-        """过关画面：半透明绿色横幅 + 提示按 Space 进入下一关。"""
+        """过关画面：半透明绿色横幅，短暂停留后自动进入下一关。"""
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
         overlay.fill(OVERLAY_COLOR)
         self.screen.blit(overlay, (0, 0))
@@ -1160,7 +1176,7 @@ class Game:
         next_target = STAGE_TARGETS[self.stage_index + 1]
         next_name = BALL_CONFIG[next_target][2]
         t3 = self.font_small.render(
-            f"下一关目标：{next_name}    按 Space 继续",
+            f"下一关目标：{next_name}    即将继续",
             True, STAGE_TEXT_COLOR)
         self.screen.blit(t3, t3.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 50)))
 
@@ -1177,7 +1193,7 @@ class Game:
         t1 = self.font_large.render("VICTORY!", True, STAGE_TEXT_COLOR)
         self.screen.blit(t1, t1.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 60)))
 
-        t2 = self.font_mid.render("恭喜合出南瓜，全部通关！", True, STAGE_TEXT_COLOR)
+        t2 = self.font_mid.render("恭喜合出神秘水果，全部通关！", True, STAGE_TEXT_COLOR)
         self.screen.blit(t2, t2.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 10)))
 
         t3 = self.font_small.render(f"最终分数：{self.score}",
@@ -1199,13 +1215,9 @@ class Game:
                     sys.exit()
 
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    # 两段式：先退出炸弹模式，再退出游戏
+                    # Esc 只用于退出炸弹模式，避免误触导致整局退出。
                     if self.bomb_mode:
                         self._exit_bomb_mode()
-                    else:
-                        pygame.event.set_grab(False)
-                        pygame.quit()
-                        sys.exit()
 
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_SPACE:
