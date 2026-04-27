@@ -94,8 +94,8 @@ class ReplayInput:
 ```
 
 - 回放按**逻辑帧序号 `frame_index`** 驱动，不按 `sim_time` 查表；`GameLoop` 每执行一次固定步长 `world.step(dt, input_frame)`，就会先调用一次 `ReplayInput.poll()` 并推进一个索引
-- `from_recording` 负责读取 Recorder 的稀疏变更帧 `{ "i": frame_index, "dir": ..., "dash": ... }`，按 [04-recorder.md §3.1](04-recorder.md) 的规则把间隙重复上一帧，展开为 `frames_by_index`
-- 录像总长度优先取 `meta.duration_frames`；缺失时退化为最后一个记录帧的 `i + 1`，但实现应 warning，因为无法知道最后一次输入是否本应持续到更晚
+- `from_recording` 是 `Recorder.load` 的薄包装：等价于 `rec = Recorder.load(path); ReplayInput(rec.frames, strict_end=...)`，本身**不再**对 `meta.duration_frames` 做任何 fallback 或 warning
+- 录像总长度由 `Recorder.load` 在加载时强制要求 `meta.duration_frames` 字段存在；缺失时 `Recorder.load` 直接抛 `ValueError`（见 [04-recorder.md §3](04-recorder.md)）。稀疏变更帧 `{ "i": frame_index, "dir": ..., "dash": ... }` 按 [04-recorder.md §3.1](04-recorder.md) 的规则在 `Recorder.load` 内展开为稠密 `frames_by_index`
 - 内部维护 `frame_idx`，每次 `poll` 返回 `frames_by_index[frame_idx]` 然后递增
 - 越界后默认返回静止帧 `InputFrame(desired_dir=None, dash=False)`，让 `max_sim_seconds` / metrics 触发 TIMEOUT；若 `strict_end=True`，则抛 `EndOfReplay` 供 `tools/replay.py` 精确结束回放
 - **不**读取 `world_state`（回放靠确定性，不靠"看世界做决定"）

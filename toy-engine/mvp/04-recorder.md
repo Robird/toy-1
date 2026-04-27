@@ -24,7 +24,7 @@ class Recorder(Generic[ConfigT]):
     def record(self, frame_idx: int, input_frame: InputFrame) -> None: ...
     def save(self, path: str | PathLike[str], gzip: bool | None = None) -> None: ...
     @classmethod
-    def load(cls, path: str | PathLike[str], config_deserializer: Callable[[dict], ConfigT] | None = None) -> "Recording[ConfigT]": ...
+    def load(cls, path: str | PathLike[str], config_deserializer: Callable[[dict], ConfigT] | None = None, *, strict_hash: bool = True) -> "Recording[ConfigT]": ...
 
 @dataclass
 class Recording(Generic[ConfigT]):
@@ -34,6 +34,7 @@ class Recording(Generic[ConfigT]):
     config_hash: str
     engine_version: str
     meta: dict          # 附加元信息：录制时间、玩家来源（human/bot/replay）等
+    file_config_hash: str | None = None  # 仅 in-memory诊断字段，不参与 save / wire
 ```
 
 兼容性与语义：
@@ -43,6 +44,7 @@ class Recording(Generic[ConfigT]):
 - 第一帧必须写入，即使它等于静止输入；否则全程静止的合法录像会被误判为空。
 - 文件内 `frames` 可以是稀疏变化点；`Recorder.load()` 返回的 `Recording.frames` 必须是按帧号索引的**稠密** `list[InputFrame]`，可直接传给 `ReplayInput(rec.frames)`。
 - `load()` 返回 `Recording` 是 [fish-doc progress.md](../../fish-doc/mvp/progress.md) 契约 #5 的增量；若历史调用方需要旧式二元组，可显式使用 `(rec.level_config, rec.frames)`。
+- `load(..., strict_hash=True)`（默认）行为与原有实现一致：重算 hash 不匹配时抛 `ConfigDriftError`。`strict_hash=False` 时，hash 不匹配仅发 `ConfigDriftWarning(UserWarning)`并继续加载；`Recording.config_hash` 取**重算值**（与当前 `config` 一致），原文件中记录的 hash 保留到 `Recording.file_config_hash`。`file_config_hash` 只是 in-memory 诊断字段，**不入 wire / 不参与 save**。`tools/replay.py --force` 底层走这条路径（见 [08-tools.md §6](08-tools.md)）。
 
 ## 3. 文件格式
 

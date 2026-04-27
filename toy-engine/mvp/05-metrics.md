@@ -19,7 +19,13 @@
 from typing import Any
 
 class MetricsCollector:
-    def __init__(self, *, sample_limit: int = 20, sample_policy: str = "first") -> None: ...
+    def __init__(
+        self,
+        *,
+        sample_limit: int = 20,
+        sample_policy: str = "first",
+        debug: bool = False,
+    ) -> None: ...
 
     # ---- scalar ----
     # 把一个标量写入报告。
@@ -32,6 +38,8 @@ class MetricsCollector:
     # ---- event ----
     # 自动记录 sim_time / frame_idx；value 可以是 None / 标量 / dict（仅当带 value 时占用 samples 配额）
     # 同名事件聚合为 {count, first_t, last_t, samples?}
+    # sample wire schema 固定为 {"t": float_seconds, "v": jsonable}，禁止额外键（实现严格校验）；
+    # value=None 时不会写 samples 数组，只更新 count/first_t/last_t。
     def record_event(self, name: str, value: Any = None) -> None: ...
 
     # ---- tick ----
@@ -56,6 +64,8 @@ class MetricsCollector:
     event = record_event
     to_dict = final_report
 ```
+
+> **`debug` 开关的语义**：`debug=False`（默认，**release** 行为）下，遇到非有限值（NaN/Inf）或不可序列化的 sample/scalar payload，发 `RuntimeWarning` 并丢弃该字段，run 继续。`debug=True` 时同样情况直接抛 `MetricsPayloadError`，便于业务在单测/CI 路径强制暴露问题。tools 默认 release，业务自测可显式构造 `MetricsCollector(debug=True)`。
 
 > 设计要点：
 > - **不再有** `RunInfo` / `__init__(run=...)`。`seed / difficulty` 由业务通过 `set_scalar(..., top_level=True)` 在开局时写入；这样引擎不需要理解"什么是一局的元数据"。
@@ -128,6 +138,7 @@ class MetricsCollector:
 - 业务在自己的 main 中持有 `metrics`，在 `on_frame` 闭包或 `World.step` 内部调用 `tick / record_event / set_scalar`
 - 终局由业务判定（`world.is_finished()` 或业务侧状态机），随后 `metrics.finish(result=...)` + `metrics.dump(path)`
 - 引擎不在 `GameLoop` 析构 / 异常路径上做"自动 dump"——异常退出时是否要写部分报告由业务决定
+- 在 tools 集成路径下，业务可通过实现可选的 `GameFactory.bind_metrics(world, metrics)` 在 loop 启动前拿到唯一的 `MetricsCollector`；一旦实现该 hook，每帧 `metrics.tick(dt)` 责任由业务承担，tools 不再重复 tick。GUI 主程仍按业务自持 collector 的方式接入。详见 [08-tools.md §2](08-tools.md)。
 
 最小集成示例见 [02-scene.md §3](02-scene.md#3-与-fish-的对接)。
 
@@ -193,6 +204,7 @@ metrics.dump("metrics.json")
 - 不允许塞 `numpy.ndarray`、`pygame.Surface` 等非原生对象
 - `Enum` 必须转为 `.name` 或 `.value`，`Path` 必须转为 `str`，dataclass 必须先转为 plain dict；collector 不隐式猜测业务对象如何展开
 - 浮点值必须是有限数；`NaN` / `Infinity` 在 debug 模式抛 `MetricsPayloadError`，release 模式丢弃该字段并记录 warning（warning 走 `warnings.warn`，不打 stdout）
+- sample 字段集合白名单 = `{"t", "v"}`，实现严格校验任何额外键直接拒绝；`record_event` 不带 value 时不会写 `samples` 数组（只更新 `count / first_t / last_t`）
 - **`final_report()` 内部做一次 `json.dumps` 干跑**（即使调用方不调用 `dump`），把不可序列化错误**前置**到 `final_report` 调用点，避免下游 tools 才发现
 
 ## 4. 性能预算

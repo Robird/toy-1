@@ -61,20 +61,25 @@
 
 | # | 问题 | 来源文档 | 状态 |
 |---|---|---|---|
-| EQ1 | `GameLoop` 是否要内置暂停？ | [02-scene.md](02-scene.md) | 暂否决（业务自理） |
-| EQ2 | 是否提供"输入插值"以适配渲染≠逻辑帧 | [03-input.md](03-input.md) | 暂否决（MVP 渲染==逻辑） |
-| EQ3 | `Vec2` 是否提供 numpy 加速 | [06-geom.md](06-geom.md) | 暂否决（百级实体不需要） |
-| EQ4 | `GeoCanvas` 是否做后处理 layer | [07-render.md](07-render.md) | 暂否决 |
-| EQ5 | tools 是否做并行/dashboard | [08-tools.md](08-tools.md) | 暂否决 |
-| EQ6 | font_utils.py 是否最终搬家到 `toy_engine/font.py` | [00-overview.md §5](00-overview.md) | 选 A（薄 re-export）；M2-08 render 未触发清理需求，方案 A 继续保留 |
 | EQ7 | audio_runtime/audio_utils 是否下沉 | [00-overview.md §6](00-overview.md) | 暂不下沉，待第二个游戏出现再评 |
-| EQ8 | 文档冲突：[03-input.md](03-input.md) 写"缺失 `meta.duration_frames` 时 fallback + warning"，但 [04-recorder.md](04-recorder.md) 要求必填且 `Recorder.load` raise | M2-04 review 发现 | 实现按 04 的 raise 落地；后续需修 03 文档以对齐 |
-| EQ9 | `MetricsCollector(debug=...)` 与 sample schema (`{t,v}`) 在 [05-metrics.md](05-metrics.md) 未明确文档化 | M2-05 review 发现 | 实现按 release/warn+drop + 严格 `{t,v}` 落地；待补文档 |
-| EQ10 | tools 在业务 `result` 缺失时兜底 `DONE`/`TIMEOUT`，[08-tools.md](08-tools.md) 未声明 | M2-09 review 发现 | 当前实现兜底，便于聚合；fish 接入后视情况收紧 |
-| EQ11 | `tools/replay.py --force` 通过私有 `_canonical_hash` + 临时文件改写 hash 实现；将来公共化建议给 `Recorder.load(strict_hash=False)` 加参数 | M2-09 review 发现 | 当前路径可靠且自清理；M3 后再评 |
-| EQ12 | `GameFactory` 协议未含 metrics 入口；业务 `World` 如何把 fish 五大指标写入 tools 的 `MetricsCollector` 待对齐 | M2-09 review 发现 | M3 fish 接入时一并讨论（可能扩 `make_world(*, metrics)`，或 World 持有自己的 collector 由 tools 合并） |
-| EQ13 | `tools/render_benchmark.py` 渲染 CPU 指标工具化缺口 | [09-mvp-scope.md §3](09-mvp-scope.md) | 仍待补 / 或在 M5 联合验收手测说明 |
-| EQ14 | `test_perf_budget_100_runs_under_2s` 在 `coverage.py` 行级追踪下超时 | M2-10 发现 | 不带 `--cov` 通过；CI 跑覆盖率任务时 deselect 该用例 |
+| EQ12 | `GameFactory.bind_metrics` hook 已落地（可选、未列入 Protocol 本体）；fish 真接入后再确认 sink 形式（World 内部 API 是否要标准化、是否需要 detach 等）| M2-09 review 发现 | **降级**为"待 M3 fish 联调验证" |
+| EQ13 | `tools/render_benchmark.py` 渲染 CPU 指标工具化缺口 | [09-mvp-scope.md §3](09-mvp-scope.md) | 延后到 M5 联合验收（手测说明或工具化） |
+
+## 已关闭问题（Closed）
+
+| # | 问题 | 关闭理由 |
+|---|---|---|
+| EQ1 | `GameLoop` 是否要内置暂停 | 共识：业务自理；MVP 不内置 |
+| EQ2 | 是否提供"输入插值"以适配渲染≠逻辑帧 | 共识：MVP 渲染==逻辑，不做 |
+| EQ3 | `Vec2` 是否提供 numpy 加速 | 共识：百级实体不需要，纯标准库已达性能预算 |
+| EQ4 | `GeoCanvas` 是否做后处理 layer | 共识：MVP 不做 |
+| EQ5 | tools 是否做并行/dashboard | 共识：MVP 单进程 100 局 < 60s 已满足 |
+| EQ6 | font_utils.py 是否最终搬家到 `toy_engine/font.py` | 选定方案 A（薄 re-export）；M2-08 render 落地未触发清理需求 |
+| EQ8 | 03-input.md / 04-recorder.md 关于 `meta.duration_frames` 的文档冲突 | 批次 B 已修 03-input.md §4.2：`from_recording` 是 `Recorder.load` 的薄包装，缺失 `duration_frames` 由 `Recorder.load` 抛 `ValueError`；与实现一致 |
+| EQ9 | `MetricsCollector(debug=...)` 与 sample schema (`{t,v}`) 未文档化 | 批次 B 已修 05-metrics.md §1.1/§1.2/§3：`__init__` 含 `debug` 关键字、sample wire 固定 `{"t","v"}` 严格白名单、`record_event` 不带 value 不写 samples |
+| EQ10 | tools 在业务 `result` 缺失时兜底 `DONE`/`TIMEOUT` 未声明 | 批次 B 已修 08-tools.md §3.1/§3.2：明确兜底规则与 `DONE` 不进 *_rate 桶 |
+| EQ11 | `--force` 之前走私有 `_canonical_hash` + 临时文件 | 批次 A 落地 `Recorder.load(..., strict_hash=False)` + `ConfigDriftWarning` + `Recording.file_config_hash`；批次 B 已修 04-recorder.md §1.1 + 08-tools.md §6 |
+| EQ14 | `test_perf_budget_100_runs_under_2s` 在 `coverage.py` 行级追踪下超时 | 批次 A 已加 `@pytest.mark.perf` + `sys.gettrace()` skip；新增 `pytest.ini` 注册 `perf` marker；CI 跑覆盖率任务可 `-m "not perf"` deselect |
 
 > fish-doc Q6（Scene/System 抽象）已**关闭**：决议见 [02-scene.md §1](02-scene.md)，并已同步到 [fish-doc progress.md](../../fish-doc/mvp/progress.md)。
 
@@ -100,3 +105,4 @@
 |---|---|---|---|
 | 2026-04-27 | Claude subagent | 完成 M1 全部 11 篇文档；Q6 决议为"不做 ECS，做 GameLoop"；字体选方案 A；音频暂不下沉 | 等待主会话批准并安排 M2 |
 | 2026-04-27 | 主会话 + Claude/GPT subagent 团队 | 完成 M2 全部 10 步实现；每步 Claude 编码 + GPT 审阅 + 主会话独立 commit；全仓 372 passed，覆盖率 92%（rng/geom/recorder/metrics 4 个核心模块 100%）；新增 EQ8–EQ14 七项文档/集成遗留 | 等待 M3 fish 业务接入；提示 fish 团队优先关注 EQ12（metrics 入口）与 EQ8（duration_frames 文档对齐） |
+| 2026-04-28 | 主会话 + Claude/GPT/Gemini 三方 + Claude subagent | POST-M2 共识：批次 A 落地代码（`Recorder.load(strict_hash=...)` + `ConfigDriftWarning` + `Recording.file_config_hash` 诊断字段；`tools/replay.py --force` 改走 `strict_hash=False` 并删私有 `_canonical_hash` hack；可选 `GameFactory.bind_metrics(world, metrics)` hook + `run_single_headless` 单 tick 移交业务；perf 用例加 `@pytest.mark.perf` + `sys.gettrace()` skip + 新建 `pytest.ini`；`.coverage` 入 `.gitignore`），批次 B 文档对齐（03/04/05/08 四篇）。EQ1–EQ6/EQ8/EQ9/EQ10/EQ11/EQ14 全部关闭；EQ7 / EQ13 保持 Pending；EQ12 降级为"待 M3 fish 联调验证 sink 形式"，hook 已落地 | 等待 M3 fish 接入验证 `bind_metrics` 调用形式 |
