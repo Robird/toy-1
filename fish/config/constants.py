@@ -53,6 +53,18 @@ PLAYER_MAX_SPEED: Final[tuple[int, ...]] = (220, 235, 245, 250, 240)
 
 
 # --------------------------------------------------------------------------
+# 玩家手感物理参数（见 fish-doc/mvp/06-controls-feel.md §2）
+# --------------------------------------------------------------------------
+# 文档只给出单一数值（非 tier→table）：MVP 阶段所有 tier 共享同一组手感参数；
+# 仅 PLAYER_MAX_SPEED 按 tier 索引（见上 §2 表）。
+
+PLAYER_TURN_RATE: Final[float] = 6.0   # rad/s; 见 fish-doc/mvp/06-controls-feel.md §2
+PLAYER_ACCEL: Final[float] = 900.0     # px/s²; 见 fish-doc/mvp/06-controls-feel.md §2
+PLAYER_DRAG: Final[float] = 3.5        # 1/s;  vel *= exp(-drag*dt); 见 06 §2
+DEAD_ZONE: Final[float] = 15.0         # px;   见 fish-doc/mvp/06-controls-feel.md §2
+
+
+# --------------------------------------------------------------------------
 # 关卡阶段（见 fish-doc/mvp/00-overview.md §4.4）
 # --------------------------------------------------------------------------
 

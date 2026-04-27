@@ -102,4 +102,4 @@ def test_main_runs(capsys: pytest.CaptureFixture[str]) -> None:
     assert "fish MVP" in captured.out
     assert "skeleton ready" in captured.out
     assert "frames=30" in captured.out
-    assert "snapshot=" in captured.out
+    assert "player_pos=" in captured.out

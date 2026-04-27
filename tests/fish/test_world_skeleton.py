@@ -56,8 +56,8 @@ class TestSnapshotShape:
         for key in ("player_pos", "frame_count", "elapsed_s", "entities", "game_result"):
             assert key in snap, f"snapshot missing required field: {key}"
 
-    def test_player_pos_is_world_center_placeholder(self, world: World) -> None:
-        # M3-02：占位为世界中心；M3-03 接入 Player 后替换。
+    def test_player_pos_starts_at_world_center(self, world: World) -> None:
+        # M3-03：player_pos 来自实际 Player，初始位置为世界中心。
         px, py = world.snapshot()["player_pos"]
         assert (px, py) == (WORLD_W / 2.0, WORLD_H / 2.0)
         assert isinstance(px, float) and isinstance(py, float)
@@ -66,7 +66,10 @@ class TestSnapshotShape:
         snap = world.snapshot()
         assert snap["frame_count"] == 0
         assert snap["elapsed_s"] == 0.0
-        assert snap["entities"] == []
+        # M3-03: entities 仅含 player 占位；M3-04 起 Spawner 追加鱼。
+        assert isinstance(snap["entities"], list)
+        assert len(snap["entities"]) == 1
+        assert snap["entities"][0]["kind"] == "player"
         assert snap["game_result"] is None
 
 

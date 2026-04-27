@@ -1,14 +1,13 @@
-"""fish/world.py — World 骨架 + GameResult 枚举（M3-02）。
+"""fish/world.py — World 骨架 + GameResult 枚举（M3-02/M3-03）。
 
 实现 toy_engine ``Steppable`` 协议（见 toy-engine/mvp/02-scene.md §2.2.1）：
 ``step / snapshot / is_finished``，外加 fish 业务侧契约 ``snapshot_hash``
 （见 toy-engine/mvp/08-tools.md §5；fish-doc/mvp/progress.md 接口契约 #3）。
 
-**M3-02 严格范围**：
-- 不持有 / 生成任何实体（Player/Fish/Boss 由 M3-03 起填）
-- 不调用任何 system（movement / collision / spawner / ai 由后续步骤填）
-- ``snapshot().player_pos`` 返回世界中心占位，待 M3-03 接入 Player 后改为实际位置
-- ``game_result`` 始终为 ``None``；GameResult 枚举值由 M3-03/05/07 在对应判定中写入
+当前实现范围：
+- M3-03 已接入 Player 与 MovementSystem；Fish/Boss/AI/Spawner/Collision 仍留后续步骤。
+- ``snapshot()["player_pos"]`` 返回玩家实际位置，供 ``KeyboardMouseInput`` 计算方向。
+- ``game_result`` 仍由后续 M3-05/07 的死亡 / 胜利判定写入。
 """
 
 from __future__ import annotations
@@ -22,8 +21,9 @@ from typing import Any
 from toy_engine.input import InputFrame
 from toy_engine.rng import SeededRng
 
-from fish.config.constants import WORLD_H, WORLD_W
 from fish.config.level_config import LevelConfig
+from fish.entities.player import Player
+from fish.systems.movement import MovementSystem
 
 
 # ---------------------------------------------------------------------------
@@ -106,13 +106,13 @@ def _normalize_for_hash(obj: Any, *, _depth: int = 0) -> Any:
 
 
 class World:
-    """fish 业务世界骨架（M3-02）。
+    """fish 业务世界骨架。
 
     满足 toy_engine ``Steppable`` 协议；可被 ``GameLoop`` 直接驱动：
     ``isinstance(world, Steppable) is True``。
 
-    M3-02 仅推进 ``frame_count`` / ``elapsed_s`` 与缓存最近一帧 ``InputFrame``，
-    不调用任何 system，也不生成任何 Entity。
+    M3-03 起包含一个玩家实体，并在 ``step`` 中调用 ``MovementSystem`` 推进
+    玩家移动；其它业务系统由后续步骤接入。
     """
 
     def __init__(self, config: LevelConfig, rng: SeededRng) -> None:
@@ -123,18 +123,30 @@ class World:
         self.frame_count: int = 0
         self.elapsed_s: float = 0.0
 
-        # 实体表（M3-03 起由对应 system 填充）
-        self.entities: list = []
+        # 实体 ID 分配器（稳定的递增整数；snapshot 排序与 hash 依赖之）
+        self._next_eid: int = 0
+
+        # 玩家：M3-03 起在世界中央生成
+        self.player: Player = Player.from_config(config, eid=self._alloc_eid())
+
+        # 实体表（M3-04 起 Spawner 追加 Fish/Boss）。
+        # 始终包含 player，使 snapshot/碰撞/AI 能统一遍历。
+        self.entities: list = [self.player]
 
         # 终态；M3-05 / M3-07 在死亡 / 反杀判定中写入
         self.game_result: GameResult | None = None
 
-        # 最近一帧 InputFrame；供后续 system 消费（M3-03 movement 起）
+        # 最近一帧 InputFrame；供 MovementSystem 消费
         self.last_input_frame: InputFrame | None = None
         # 最近一次 step 的 effective_dt；供 metrics / 慢动作回溯
         self.last_effective_dt: float = 0.0
 
+        # 系统实例（一次构造、复用）
+        self._movement = MovementSystem()
+
         # 关卡总时长（仅供 ``is_finished`` 占位判定使用）。
+        # （留在末尾，避免与 system 初始化顺序耦合。）
+        # NOTE: 下方注释保留原文。
         # NOTE: BOSS / REVENGE 阶段在 fish-doc 04 §2 中为事件驱动
         # （duration_s == 0 表示直到 VICTORY/DEAD），因此这里的 sum 仅是
         # WARMUP+PRESSURE 的"线性时长"；M3-06/07 会改用 LevelDirector 推进
@@ -150,12 +162,12 @@ class World:
     def step(self, dt: float, input_frame: InputFrame) -> None:
         """推进一帧。
 
-        M3-02 实现：仅更新计时器与缓存输入帧；不调用任何 system。
-        签名与 ``toy_engine.loop.GameLoop._tick_once`` 调用一致：
-        ``world.step(effective_dt, input_frame)``。
+        M3-03 实现：缓存输入帧 → MovementSystem 推进玩家及其它实体 →
+        累加计时器。碰撞 / AI / spawner 由后续步骤接入。
         """
         self.last_input_frame = input_frame
         self.last_effective_dt = float(dt)
+        self._movement.step(self, float(dt))
         self.frame_count += 1
         self.elapsed_s += float(dt)
 
@@ -163,23 +175,51 @@ class World:
         """返回当前世界的只读快照（dict 形态）。
 
         必须包含的契约字段（见 fish-doc/mvp/progress.md 接口契约 #2/#3）：
-          - ``player_pos: tuple[float, float]`` —— 占位，M3-03 接入 Player
-            后改为实际玩家位置（``KeyboardMouseInput`` 依赖此字段计算鼠标方向）
+                    - ``player_pos: tuple[float, float]`` —— 实际玩家位置
+                        （``KeyboardMouseInput`` 依赖此字段计算鼠标方向）
           - ``frame_count: int``
           - ``elapsed_s: float``
-          - ``entities: list[dict]`` —— M3-02 始终为空 list
-          - ``game_result: GameResult | None`` —— M3-02 始终为 None
+                    - ``entities: list[dict]`` —— 当前至少包含 player
+                    - ``game_result: GameResult | None`` —— 进行中为 None
 
-        返回 dict 而非 frozen dataclass：M3-02 阶段尚未稳定字段集合，dict
+                返回 dict 而非 frozen dataclass：M3 阶段尚未稳定字段集合，dict
         便于后续步骤平滑追加；待 M3-10 收尾时再视情况升级为 frozen dataclass。
         """
         return {
-            "player_pos": (float(WORLD_W) / 2.0, float(WORLD_H) / 2.0),
+            "player_pos": (float(self.player.pos.x), float(self.player.pos.y)),
             "frame_count": self.frame_count,
             "elapsed_s": self.elapsed_s,
-            "entities": [],
+            "entities": [self._entity_snapshot(e) for e in self.entities],
             "game_result": self.game_result.name if self.game_result is not None else None,
         }
+
+    # ------------------------------------------------------------------
+    # 内部 helper
+    # ------------------------------------------------------------------
+
+    def _alloc_eid(self) -> int:
+        eid = self._next_eid
+        self._next_eid += 1
+        return eid
+
+    def _entity_snapshot(self, ent) -> dict:
+        """把单个 Entity 序列化为 snapshot dict。
+
+        Player 携带额外字段 ``heading`` / ``tier``；其余实体（M3-04+）只暴露
+        通用字段。所有 Vec2 走 ``[x, y]`` 列表表示，便于稳定哈希。
+        """
+        d = {
+            "eid": int(ent.eid),
+            "kind": "player" if isinstance(ent, Player) else "entity",
+            "pos": [float(ent.pos.x), float(ent.pos.y)],
+            "vel": [float(ent.vel.x), float(ent.vel.y)],
+            "radius": float(ent.radius),
+            "alive": bool(ent.alive),
+        }
+        if isinstance(ent, Player):
+            d["heading"] = float(ent.heading)
+            d["tier"] = int(ent.tier)
+        return d
 
     def snapshot_hash(self) -> str:
         """返回当前 snapshot 的稳定哈希。

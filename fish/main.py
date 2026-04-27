@@ -9,6 +9,7 @@ from __future__ import annotations
 from math import nextafter
 from typing import Any
 
+from toy_engine.geom import Vec2
 from toy_engine.input import InputFrame
 from toy_engine.loop import GameLoop
 from toy_engine.rng import SeededRng
@@ -21,15 +22,15 @@ from fish.world import World
 _DEFAULT_HEADLESS_FRAMES: int = 30
 
 
-class _NullInput:
-    """占位输入源：每帧返回空 ``InputFrame``（无方向意图）。
+class _StubInput:
+    """占位输入源：每帧返回固定方向 ``Vec2(1, 0)``。
 
-    M3-03 接入 ``KeyboardMouseInput`` 后此类即可下线。结构化兼容
-    ``toy_engine.input.InputSource`` 协议。
+    仅供 M3-03 headless 演示 player 实际会移动；M3-10 接入 BotInput
+    / KeyboardMouseInput 后下线。结构化兼容 ``InputSource`` 协议。
     """
 
     def poll(self, world_state: Any) -> InputFrame:  # noqa: ARG002
-        return InputFrame()
+        return InputFrame(desired_dir=Vec2(1.0, 0.0))
 
 
 def main() -> None:
@@ -47,14 +48,17 @@ def main() -> None:
 
     loop = GameLoop(
         world=world,
-        input_source=_NullInput(),
+        input_source=_StubInput(),
         dt=DT,
         max_sim_seconds=max_sim_seconds,
     )
     loop.run_headless()
 
     print(f"frames={world.frame_count} elapsed_s={world.elapsed_s:.4f}")
-    print(f"snapshot={world.snapshot()}")
+    print(
+        f"player_pos=({world.player.pos.x:.2f}, {world.player.pos.y:.2f}) "
+        f"heading={world.player.heading:.4f}"
+    )
     print(f"snapshot_hash={world.snapshot_hash()}")
 
 
