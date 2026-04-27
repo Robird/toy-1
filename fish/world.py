@@ -21,9 +21,12 @@ from typing import Any
 from toy_engine.input import InputFrame
 from toy_engine.rng import SeededRng
 
+from fish.ai.fish_ai import FishAI
 from fish.config.level_config import LevelConfig
+from fish.entities.fish import Fish
 from fish.entities.player import Player
 from fish.systems.movement import MovementSystem
+from fish.systems.spawner import Spawner
 
 
 # ---------------------------------------------------------------------------
@@ -127,10 +130,12 @@ class World:
         self._next_eid: int = 0
 
         # 玩家：M3-03 起在世界中央生成
-        self.player: Player = Player.from_config(config, eid=self._alloc_eid())
+        self.player: Player = Player.from_config(config, eid=self.alloc_eid())
 
-        # 实体表（M3-04 起 Spawner 追加 Fish/Boss）。
-        # 始终包含 player，使 snapshot/碰撞/AI 能统一遍历。
+        # 普通鱼列表（M3-04 起由 Spawner 追加；M3-05 起由碰撞淘汰）
+        self.fishes: list[Fish] = []
+
+        # 实体表：始终包含 player + fishes，使 snapshot/碰撞统一遍历。
         self.entities: list = [self.player]
 
         # 终态；M3-05 / M3-07 在死亡 / 反杀判定中写入
@@ -143,6 +148,8 @@ class World:
 
         # 系统实例（一次构造、复用）
         self._movement = MovementSystem()
+        self._fish_ai = FishAI()
+        self._spawner = Spawner(self, rng.spawn("spawner"))
 
         # 关卡总时长（仅供 ``is_finished`` 占位判定使用）。
         # （留在末尾，避免与 system 初始化顺序耦合。）
@@ -162,12 +169,20 @@ class World:
     def step(self, dt: float, input_frame: InputFrame) -> None:
         """推进一帧。
 
-        M3-03 实现：缓存输入帧 → MovementSystem 推进玩家及其它实体 →
-        累加计时器。碰撞 / AI / spawner 由后续步骤接入。
+        M3-04 起调用顺序固定为：spawner → fish_ai（按 eid 升序） →
+        movement（玩家+所有 fish）→ 计时器累加。该顺序保证 snapshot_hash
+        在相同 seed 下逐帧可重现（契约 #3）。
         """
         self.last_input_frame = input_frame
         self.last_effective_dt = float(dt)
-        self._movement.step(self, float(dt))
+        dt_f = float(dt)
+
+        self._spawner.step(self, dt_f)
+        # AI 按 eid 升序遍历，避免 list 顺序变化影响决定性
+        for fish in sorted(self.fishes, key=lambda f: f.eid):
+            self._fish_ai.step(fish, self, dt_f)
+        self._movement.step(self, dt_f)
+
         self.frame_count += 1
         self.elapsed_s += float(dt)
 
@@ -185,11 +200,13 @@ class World:
                 返回 dict 而非 frozen dataclass：M3 阶段尚未稳定字段集合，dict
         便于后续步骤平滑追加；待 M3-10 收尾时再视情况升级为 frozen dataclass。
         """
+        # entities 按 eid 升序输出，使 snapshot_hash 不依赖 list 插入顺序。
+        ents = sorted(self.entities, key=lambda e: e.eid)
         return {
             "player_pos": (float(self.player.pos.x), float(self.player.pos.y)),
             "frame_count": self.frame_count,
             "elapsed_s": self.elapsed_s,
-            "entities": [self._entity_snapshot(e) for e in self.entities],
+            "entities": [self._entity_snapshot(e) for e in ents],
             "game_result": self.game_result.name if self.game_result is not None else None,
         }
 
@@ -197,7 +214,8 @@ class World:
     # 内部 helper
     # ------------------------------------------------------------------
 
-    def _alloc_eid(self) -> int:
+    def alloc_eid(self) -> int:
+        """分配下一个稳定递增 eid。被 World 自身（player）与 Spawner 共用。"""
         eid = self._next_eid
         self._next_eid += 1
         return eid
@@ -205,12 +223,18 @@ class World:
     def _entity_snapshot(self, ent) -> dict:
         """把单个 Entity 序列化为 snapshot dict。
 
-        Player 携带额外字段 ``heading`` / ``tier``；其余实体（M3-04+）只暴露
-        通用字段。所有 Vec2 走 ``[x, y]`` 列表表示，便于稳定哈希。
+        Player / Fish 携带额外业务字段（tier/heading/state 等）；其它实体只
+        暴露通用字段。所有 Vec2 走 ``[x, y]`` 列表表示，便于稳定哈希。
         """
+        if isinstance(ent, Player):
+            kind = "player"
+        elif isinstance(ent, Fish):
+            kind = "fish"
+        else:
+            kind = "entity"
         d = {
             "eid": int(ent.eid),
-            "kind": "player" if isinstance(ent, Player) else "entity",
+            "kind": kind,
             "pos": [float(ent.pos.x), float(ent.pos.y)],
             "vel": [float(ent.vel.x), float(ent.vel.y)],
             "radius": float(ent.radius),
@@ -219,6 +243,10 @@ class World:
         if isinstance(ent, Player):
             d["heading"] = float(ent.heading)
             d["tier"] = int(ent.tier)
+        elif isinstance(ent, Fish):
+            d["heading"] = float(ent.heading)
+            d["tier"] = int(ent.tier)
+            d["state"] = ent.state.name
         return d
 
     def snapshot_hash(self) -> str:
