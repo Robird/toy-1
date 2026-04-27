@@ -102,3 +102,6 @@ class MockFactory:
 DET_FACTORY = MockFactory(max_frames=None)
 NON_DET_FACTORY = MockFactory(max_frames=None, non_deterministic=True)
 SHORT_FACTORY = MockFactory(max_frames=10)
+# Convenience singleton for end-to-end smoke tests: deterministic, finishes quickly
+# so subprocess-driven CLI runs stay fast.
+MOCK_FACTORY = MockFactory(max_frames=8)
