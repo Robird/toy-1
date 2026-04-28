@@ -201,6 +201,7 @@ def run_gui(
     difficulty: float = 0.5,
     title: str = "fish — MVP",
     end_screen_seconds: float = 3.0,
+    use_bot: bool = False,
 ) -> None:
     """开 1280×720 窗口跑实时游戏；ESC 退出。
 
@@ -232,15 +233,21 @@ def run_gui(
 
     keyboard = KeyboardMouseInput(viewport=(WORLD_W, WORLD_H))
     renderer = PygRenderer(canvas, FISH_PALETTE, font)
-
     # M3-09 手感层（仅 GUI；headless 不实例化以保持决定性）。
     feel = FeelEffects(FISH_PALETTE, rng=SeededRng(seed=cfg.seed).spawn("feel"))
     feel.attach_canvas(canvas)
     world.register_listener(feel.handle)
 
+    # M3-10：可选 BotInput 替代键鼠（用于现场观看 bot 表演）
+    if use_bot:
+        from fish.ai.bot_player import BotInput
+        input_source = BotInput(SeededRng(seed=seed).spawn("bot"))
+    else:
+        input_source = keyboard
+
     loop = GameLoop(
         world=world,
-        input_source=keyboard,
+        input_source=input_source,
         dt=DT,
         # 慢镜：通过 callable 每帧读 feel.get_dt_scale；GameLoop 没有
         # set_dt_scale，但 logic_dt_scale 接受 callable，等价机制。
@@ -287,6 +294,8 @@ def run_gui(
 def main() -> None:
     parser = argparse.ArgumentParser(description="fish MVP entry point")
     parser.add_argument("--headless", action="store_true", help="run without GUI")
+    parser.add_argument("--bot", action="store_true",
+                        help="GUI 模式下用 BotInput 替代 KeyboardMouseInput（看 bot 表演）")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--difficulty", type=float, default=0.5)
     parser.add_argument("--max-frames", type=int, default=_DEFAULT_HEADLESS_FRAMES)
@@ -301,7 +310,7 @@ def main() -> None:
             max_frames=args.max_frames,
         )
     else:
-        run_gui(seed=args.seed, difficulty=args.difficulty)
+        run_gui(seed=args.seed, difficulty=args.difficulty, use_bot=args.bot)
 
 
 if __name__ == "__main__":
