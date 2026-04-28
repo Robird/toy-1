@@ -248,6 +248,44 @@ def test_gradient_invalid_mode_raises():
         )
 
 
+def test_ellipse_long_axis_aligns_with_heading_at_45deg():
+    """试玩反馈 #26：椭圆长轴必须沿 heading 方向。
+
+    在 heading=π/4（screen-Y-down 时指向"右下"）下绘制 length>>width 的椭圆，
+    长轴方向上、距中心 ~length/2 的点必须落在椭圆内（命中染色），而短轴方向
+    上、距中心 ~length/2 的点必须在椭圆外（未染色）。
+    在 bug 修复前（pygame.transform.rotate 角度未取负），45° 时长短轴互换 →
+    长轴方向像素不命中、短轴方向像素命中，本测试将失败。
+    """
+    canvas = GeoCanvas.offscreen(160, 160)
+    canvas.clear((0, 0, 0))
+    cx, cy = 80, 80
+    L, W = 80.0, 16.0  # 极扁椭圆放大长短轴差异
+    heading = math.pi / 4.0
+    canvas.ellipse(
+        center=(cx, cy), length=L, height=W, angle=heading,
+        color=(0, 255, 0), stroke_width=0,
+    )
+    # 长轴方向单位向量（screen-Y-down 与 heading 同号）
+    dx, dy = math.cos(heading), math.sin(heading)
+    # 取沿长轴 ~L*0.4 处（在椭圆内）
+    px = int(round(cx + dx * L * 0.4))
+    py = int(round(cy + dy * L * 0.4))
+    along = canvas.surface.get_at((px, py))
+    # 取垂直方向（短轴）~L*0.4 处（应在椭圆外）
+    perp_dx, perp_dy = -dy, dx
+    qx = int(round(cx + perp_dx * L * 0.4))
+    qy = int(round(cy + perp_dy * L * 0.4))
+    perp = canvas.surface.get_at((qx, qy))
+    assert (along.r, along.g, along.b) == (0, 255, 0), (
+        f"long-axis sample at heading {heading} rad should be inside ellipse, "
+        f"got pixel={along}"
+    )
+    assert (perp.r, perp.g, perp.b) == (0, 0, 0), (
+        f"perpendicular sample should be outside ellipse, got pixel={perp}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Text
 # ---------------------------------------------------------------------------

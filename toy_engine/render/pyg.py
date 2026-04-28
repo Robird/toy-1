@@ -342,7 +342,12 @@ class GeoCanvas:
             (0, 0, L, H), max(0, int(stroke_width)),
         )
         if angle != 0:
-            rotated = pygame.transform.rotate(tmp, math.degrees(angle))
+            # pygame.transform.rotate is CCW in standard math coords; our
+            # `angle` is a heading in screen-Y-down (CW positive), so negate.
+            # Without this, ellipses appeared correct only at 0°/90°/180°/270°
+            # (where AABB is symmetric) and rotated 90° off at 45°/135°/...
+            # See fish-doc/mvp/progress.md 发现 #26.
+            rotated = pygame.transform.rotate(tmp, -math.degrees(angle))
         else:
             rotated = tmp
         rect = rotated.get_rect()
@@ -365,7 +370,8 @@ class GeoCanvas:
             (0, 0, L, H), float(start_angle), float(end_angle), sw,
         )
         if angle != 0:
-            rotated = pygame.transform.rotate(tmp, math.degrees(angle))
+            # See ellipse() above: negate to match screen-Y-down heading.
+            rotated = pygame.transform.rotate(tmp, -math.degrees(angle))
         else:
             rotated = tmp
         rect = rotated.get_rect()
@@ -553,7 +559,8 @@ class GeoCanvas:
         else:
             cache.move_to_end(key)
         if angle != 0:
-            rotated = pygame.transform.rotate(base, math.degrees(angle))
+            # See ellipse() above: negate to match screen-Y-down heading.
+            rotated = pygame.transform.rotate(base, -math.degrees(angle))
         else:
             rotated = base
         rect = rotated.get_rect()

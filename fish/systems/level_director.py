@@ -121,11 +121,27 @@ class LevelDirector:
     def get_active_population_target(self) -> dict[int, int]:
         """供 Spawner 查询当前阶段的 ``population_target``。
 
-        BOSS 阶段返回全 0：抑制普通鱼新刷（任务书要求）。已在场的鱼仍正常
-        消化，画面让位给 Boss。其它阶段直接返回 cfg 中的目标值。
+        BOSS 阶段：保留 Tier-3/4 的目标值（让玩家仍有 *成长链* 食物可吃，
+        否则若玩家入 Boss 时仅 tier=2，将永远卡在 tier=2/3 而无法反杀
+        Boss——见试玩反馈 #27），但抑制 Tier-1/2 新刷以让画面让位给 Boss。
+        其它阶段直接返回 cfg 中的目标值。
         """
         if self.current_phase == Phase.BOSS:
-            return {1: 0, 2: 0, 3: 0, 4: 0}
+            cfg_target = self.world.config.phases[Phase.BOSS].population_target
+            out: dict[int, int] = {}
+            for tier, n in cfg_target.items():
+                try:
+                    t_int = int(tier)
+                except (TypeError, ValueError):
+                    t_int = tier  # type: ignore[assignment]
+                if isinstance(t_int, int) and t_int >= 3:
+                    out[tier] = int(n) if isinstance(n, (int, float)) else 0
+                else:
+                    out[tier] = 0
+            # 兜底：保证 key 集合不丢，便于 spawner 既有逻辑兼容
+            for t in (1, 2, 3, 4):
+                out.setdefault(t, 0)
+            return out
         return dict(self.world.config.phases[self.current_phase].population_target)
 
     # ------------------------------------------------------------------

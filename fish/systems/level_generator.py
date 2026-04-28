@@ -61,16 +61,21 @@ _WARMUP_TIER1_RANGE: tuple[int, int] = (6, 10)
 
 # PRESSURE：引入 Tier-2/3，少量 Tier-4（§4 表 + §5 #2 / #5 数值连续性）
 # Tier-2/3/4 上限受 §5 #5 约束（WARMUP 全部为 0 → 相邻 ≤ 3 才合法）。
+# 试玩反馈 #27（fish-doc/mvp/progress.md）：Tier-3/4 原 “可能为 0” 会造成
+# 玩家成长链断档（无法吃到 Tier-4 → 不能反杀 Boss）；将 下限提到 » 1。
 _PRESSURE_TIER1_RANGE: tuple[int, int] = (5, 8)
-_PRESSURE_TIER2_RANGE: tuple[int, int] = (2, 3)
-_PRESSURE_TIER3_RANGE: tuple[int, int] = (1, 3)
-_PRESSURE_TIER4_RANGE: tuple[int, int] = (0, 2)
+_PRESSURE_TIER2_RANGE: tuple[int, int] = (3, 4)
+_PRESSURE_TIER3_RANGE: tuple[int, int] = (2, 3)
+_PRESSURE_TIER4_RANGE: tuple[int, int] = (1, 2)
 
 # BOSS：维持中密度普通鱼，威胁鱼下调（§4 表）
+# 试玩反馈 #27：Boss 阶段 spawner 仍会依据 LevelDirector 的裁决保留
+# Tier-3/4 的补刷（抵消 Tier-1/2 的噪音），这里括充下限以避免 « 刚进
+# Boss 场上 Tier-3/4 为 0 » 的极端采样。
 _BOSS_TIER1_RANGE: tuple[int, int] = (4, 7)
 _BOSS_TIER2_RANGE: tuple[int, int] = (2, 4)
-_BOSS_TIER3_RANGE: tuple[int, int] = (1, 3)
-_BOSS_TIER4_RANGE: tuple[int, int] = (0, 2)
+_BOSS_TIER3_RANGE: tuple[int, int] = (2, 3)
+_BOSS_TIER4_RANGE: tuple[int, int] = (1, 2)
 
 # REVENGE：刷新降低；窄区间避免与 BOSS 段连续性 ×3 突变（§5 #5）
 _REVENGE_TIER1_RANGE: tuple[int, int] = (3, 5)
@@ -129,6 +134,16 @@ _PHASE_MAX_EDIBLE_TIER: dict[Phase, int] = {
 }
 
 
+# C6（试玩反馈 #27）：成长链最低保证。
+# 玩家 can_eat = a.tier ≥ b.tier-1（裁决 #13）→ 从 tier 0 反杀 tier-5 Boss
+# 必须能稳定吃到 tier 4。WARMUP 已由 C3 强制 ≥1 条 Tier-1，不再列入此表。
+# REVENGE 阶段玩家已经是 Tier-4，不再依赖成长链，故仅约束 PRESSURE / BOSS。
+_GROWTH_CHAIN_MIN: dict[Phase, dict[int, int]] = {
+    Phase.PRESSURE: {1: 3, 2: 2, 3: 1, 4: 1},
+    Phase.BOSS: {3: 1, 4: 1},
+}
+
+
 def _is_finite_number(value: object) -> bool:
     """配置数值必须是有限 int/float；bool 不视为合法数值。"""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -159,8 +174,9 @@ def validate(cfg: LevelConfig) -> list[Violation]:
     2. 威胁不超量：所有 Phase ``population_target[4] <= PHASE_TIER4_POPULATION_MAX``。
     3. WARMUP 纯净：``population_target[3] == 0 and population_target[4] == 0``。
     4. BOSS 进场时机合理：``boss.appear_time_s ∈ [25, 60]``（左右闭区间）。
-    5. 数值连续性：相邻 Phase 单 Tier ``max(a,b) <= 3 * max(min(a,b), 1)``。
-    """
+    5. 数值连续性：相邻 Phase 单 Tier ``max(a,b) <= 3 * max(min(a,b), 1)``。    6. 成长链完整：PRESSURE 与 BOSS 阶段对每个 Tier ``t ∈ {1..4}`` 至少有
+       ``_GROWTH_CHAIN_MIN[phase][t]`` 条 ``population_target``，确保玩家从
+       Tier 0 一路吃到 Tier 4（反杀 Boss 的前置条件）。试玩反馈 #27。    """
     vs: list[Violation] = []
 
     missing = [ph for ph in _PHASE_ORDER if ph not in cfg.phases]
@@ -321,6 +337,21 @@ def validate(cfg: LevelConfig) -> list[Violation]:
                         f"adjacent {a_ph.name}->{b_ph.name} tier{t} "
                         f"jumps {a}->{b}; allowed <= {allowed} "
                         "by max(a,b) <= 3*max(min(a,b),1)",
+                    )
+                )
+
+    # #6：成长链最低保证（试玩反馈 #27）
+    for ph, mins in _GROWTH_CHAIN_MIN.items():
+        pcfg = cfg.phases[ph]
+        for tier, min_count in mins.items():
+            n = _population_count(pcfg, tier)
+            if n is None or n < min_count:
+                vs.append(
+                    Violation(
+                        "C6",
+                        f"phase {ph.name} population_target[{tier}]="
+                        f"{n!r} < required min {min_count} "
+                        "(player growth chain to tier 4 not guaranteed)",
                     )
                 )
 

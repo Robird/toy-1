@@ -334,11 +334,20 @@ class TestGetActivePopulationTarget:
             == w.config.phases[Phase.PRESSURE].population_target
         )
 
-    def test_boss_returns_zero_target(self) -> None:
+    def test_boss_returns_zero_for_low_tiers_and_keeps_growth_chain(self) -> None:
+        # 试玩反馈 #27：Boss 阶段仅抑制 Tier-1/2 新刷，保留 Tier-3/4
+        # 作为玩家成长链的食物。
         w = self._world()
         w.director.current_phase = Phase.BOSS
         target = w.director.get_active_population_target()
-        assert all(v == 0 for v in target.values())
+        assert target.get(1, 0) == 0
+        assert target.get(2, 0) == 0
+        cfg_boss = w.config.phases[Phase.BOSS].population_target
+        assert target.get(3, 0) == int(cfg_boss.get(3, 0))
+        assert target.get(4, 0) == int(cfg_boss.get(4, 0))
+        # C6 保证 Tier-3/4 至少为 1
+        assert target.get(3, 0) >= 1
+        assert target.get(4, 0) >= 1
 
     def test_revenge_returns_revenge_target(self) -> None:
         w = self._world()
@@ -362,23 +371,25 @@ class TestGetActivePopulationTarget:
 
 
 class TestSpawnerSuppressedInBoss:
-    def test_boss_phase_does_not_spawn_new_fish(self) -> None:
+    def test_boss_phase_suppresses_low_tier_spawn(self) -> None:
+        # 试玩反馈 #27：Boss 阶段仅抑制 Tier-1/2 新刷；Tier-3/4 仍可被
+        # spawner 补齐作为玩家成长链的食物。
         cfg = _gen(0, 0.5)
         w = World(cfg, SeededRng(seed=cfg.seed))
-        # \u624b\u52a8\u8fdb\u5165 BOSS \u9636\u6bb5\u3001\u6e05\u7a7a\u5df2\u5237\u9c7c
+        # 手动进入 BOSS 阶段、清空已刷鱼
         w.director.current_phase = Phase.BOSS
         w.director.phase_elapsed_s = 0.0
         w.fishes.clear()
         w.entities = [w.player]
 
-        # \u8dd1 5s\uff0c\u8db3\u591f\u8ba9 spawner \u68c0\u67e5\u591a\u6b21\uff083s/0.5s = 6 \u6b21\uff09
+        # 跑 5s，足够让 spawner 检查多次
         for _ in range(int(5.0 / DT)):
             w.step(DT, InputFrame())
-            # \u8df3\u8fc7\u9636\u6bb5\u53ef\u80fd\u88ab\u5176\u4ed6\u6761\u4ef6\u63a8\u8fdb\u5230\u522b\u5904\u7684\u60c5\u51b5
             if w.director.current_phase != Phase.BOSS:
-                # \u5f3a\u5236\u62c9\u56de
                 w.director.current_phase = Phase.BOSS
-        assert w.fishes == []
+        # 任何 Tier-1/2 鱼都不能被新刷出来
+        for f in w.fishes:
+            assert f.tier not in (1, 2)
 
     def test_revenge_phase_resumes_spawning_and_refreshes_cached_target(self) -> None:
         cfg = _gen(0, 0.5)

@@ -58,7 +58,10 @@ PLAYER_MAX_SPEED: Final[tuple[int, ...]] = (220, 235, 245, 250, 240)
 # 文档只给出单一数值（非 tier→table）：MVP 阶段所有 tier 共享同一组手感参数；
 # 仅 PLAYER_MAX_SPEED 按 tier 索引（见上 §2 表）。
 
-PLAYER_TURN_RATE: Final[float] = 6.0   # rad/s; 见 fish-doc/mvp/06-controls-feel.md §2
+PLAYER_TURN_RATE: Final[float] = 12.0  # rad/s; 见 fish-doc/mvp/06-controls-feel.md §2
+# 注：试玩反馈 #25（fish-doc/mvp/progress.md）— 原 6.0 rad/s 转弯太慢、对准
+# 目标困难；提至 12.0 rad/s（约 2× / 一帧约 11.5°@60fps）以保持「易控但仍
+# 有一定惯性」的手感。仅影响玩家；fish/boss 的 turn_rate 由各自常量控制。
 PLAYER_ACCEL: Final[float] = 900.0     # px/s²; 见 fish-doc/mvp/06-controls-feel.md §2
 PLAYER_DRAG: Final[float] = 3.5        # 1/s;  vel *= exp(-drag*dt); 见 06 §2
 DEAD_ZONE: Final[float] = 15.0         # px;   见 fish-doc/mvp/06-controls-feel.md §2
