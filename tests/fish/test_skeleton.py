@@ -88,16 +88,19 @@ def test_level_config_is_frozen() -> None:
         cfg.seed = 42  # type: ignore[misc]
 
 
-def test_main_runs(capsys: pytest.CaptureFixture[str]) -> None:
-    """main() 可被调用并完成 headless 多帧 demo。
+def test_main_runs(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``python -m fish.main --headless`` 可被调用并完成 headless 多帧 demo。
 
     M3-02 起 main() 合法地透传依赖到 toy_engine.input（其顶层 import pygame，
-    但仅创建模块对象、不创建 display）。M3-04 起 main() 跑 300 帧（fish 群刷新
-    演示）；M3-05 起跑 600 帧（碰撞 / 成长 / DEAD 演示）。本测试只验证可
-    执行 + 打印骨架字样与 snapshot 主要字段；不锁帧数避免 main 节奏调整时回归。
+    但仅创建模块对象、不创建 display）。M3-08 起 main() 默认入口是 GUI；
+    本测试改走 ``--headless`` 旁路，覆盖原 demo 路径。
     """
     from fish.main import main
 
+    monkeypatch.setattr("sys.argv", ["fish.main", "--headless"])
     main()
     captured = capsys.readouterr()
     assert "fish MVP" in captured.out
