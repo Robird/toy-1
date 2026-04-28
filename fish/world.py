@@ -21,9 +21,11 @@ from typing import Any
 from toy_engine.input import InputFrame
 from toy_engine.rng import SeededRng
 
+from fish.ai.boss_ai import BossAI
 from fish.ai.fish_ai import FishAI
 from fish.config.constants import GROWTH_REWARD
 from fish.config.level_config import LevelConfig
+from fish.entities.boss import Boss
 from fish.entities.fish import Fish
 from fish.entities.player import Player
 from fish.systems.collision import CollisionSystem
@@ -139,7 +141,14 @@ class World:
         # 普通鱼列表（M3-04 起由 Spawner 追加；M3-05 起由碰撞淘汰）
         self.fishes: list[Fish] = []
 
-        # 实体表：始终包含 player + fishes，使 snapshot/碰撞统一遍历。
+        # M3-07：Boss 实体；进入 BOSS 阶段时由 LevelDirector 通过
+        # ``world.spawn_boss()`` 创建。死亡后置 None（以便 director 切 REVENGE）。
+        self.boss: Boss | None = None
+
+        # M3-07：Tier-4 警示标志；CollisionSystem 每帧维护，渲染层 M3-08 据此告警。
+        self.tier4_warning: bool = False
+
+        # 实体表：始终包含 player + fishes (+ boss 当其存在)，使 snapshot/碰撞统一遍历。
         self.entities: list = [self.player]
 
         # 终态；M3-05 / M3-07 在死亡 / 反杀判定中写入
@@ -153,6 +162,7 @@ class World:
         # 系统实例（一次构造、复用）
         self._movement = MovementSystem()
         self._fish_ai = FishAI()
+        self._boss_ai = BossAI()
         self._spawner = Spawner(self, rng.spawn("spawner"))
         self._collision = CollisionSystem()
         self._growth = GrowthSystem()
@@ -169,6 +179,8 @@ class World:
             "fish_eaten_tier4": 0,
             "player_grow_count": 0,
             "death_cause_tier": -1,
+            "boss_bite_count": 0,
+            "boss_killed": 0,
         }
 
         # 关卡总时长（仅供 ``is_finished`` 占位判定使用）。
@@ -209,6 +221,9 @@ class World:
             # AI 按 eid 升序遍历，避免 list 顺序变化影响决定性
             for fish in sorted(self.fishes, key=lambda f: f.eid):
                 self._fish_ai.step(fish, self, dt_f)
+            # M3-07：BossAI 在 fish_ai 之后单独跑；boss 不进 fish_ai 循环
+            if self.boss is not None and self.boss.alive:
+                self._boss_ai.step(self.boss, self, dt_f)
             self._movement.step(self, dt_f)
             self._collision.step(self, dt_f)
             self._growth.step(self, dt_f)
@@ -244,6 +259,47 @@ class World:
         self.player.alive = False
         self.stats["death_cause_tier"] = int(fish.tier)
 
+    def on_player_eaten_by_boss(self, boss: "Boss") -> None:
+        """玩家被 Boss 杀：DEAD；death_cause_tier 用 boss.tier 标识（=BOSS_TIER）。"""
+        if self.game_result is not None:
+            return
+        self.game_result = GameResult.DEAD
+        self.player.alive = False
+        self.stats["death_cause_tier"] = int(boss.tier)
+
+    def on_boss_bitten(self, player: Player, boss: "Boss") -> None:
+        """玩家咬中 Boss 一口：累加统计；不修改终态。"""
+        self.stats["boss_bite_count"] += 1
+
+    def on_boss_killed(self, boss: "Boss") -> None:
+        """Boss HP 归零：解除引用，让 LevelDirector 切 REVENGE。"""
+        self.stats["boss_killed"] += 1
+        # 不立即写 game_result：交由 director 在 REVENGE 阶段判定 VICTORY
+        # （fish-doc/03 §2「离场仅在 VICTORY 或 DEAD 时」+ fish-doc/01 §4
+        # PHASE_REVENGE 短暂庆祝段）。
+        if self.boss is boss:
+            self.boss = None
+
+    def spawn_boss(self) -> "Boss":
+        """LevelDirector 在进入 BOSS 阶段时调用：生成 Boss 实例。
+
+        若 ``self.boss`` 已存在则原样返回（director 应只调用一次，但加防御）。
+        """
+        if self.boss is not None and self.boss.alive:
+            return self.boss
+        eid = self.alloc_eid()
+        boss_rng = self.rng.spawn("boss")
+        boss = Boss.spawn(
+            eid=eid,
+            world_size=self.config.world_size,
+            rng=boss_rng,
+            player_pos=self.player.pos,
+            cfg_boss=self.config.boss,
+        )
+        self.boss = boss
+        self.entities.append(boss)
+        return boss
+
     def on_player_grow(self, old_tier: int, new_tier: int) -> None:
         """玩家跨过 TIER_THRESHOLDS 升级：仅 +1 计数；M3-09 接手感钩子。"""
         self.stats["player_grow_count"] += 1
@@ -256,12 +312,20 @@ class World:
         """过滤掉 ``alive=False`` 的 fish 并重建 entities。
 
         player 即使 alive=False（DEAD 后）也始终保留在 entities 中，便于
-        snapshot / render 显示「死亡瞬间」状态。
+        snapshot / render 显示「死亡瞬间」状态。Boss 死亡（alive=False）
+        从 entities / boss 引用中清掉，让 LevelDirector 据此切 REVENGE。
         """
         live_fishes = [f for f in self.fishes if f.alive]
-        if len(live_fishes) != len(self.fishes):
+        boss_changed = False
+        if self.boss is not None and not self.boss.alive:
+            self.boss = None
+            boss_changed = True
+        if len(live_fishes) != len(self.fishes) or boss_changed:
             self.fishes = live_fishes
-            self.entities = [self.player, *live_fishes]
+            ents: list = [self.player, *live_fishes]
+            if self.boss is not None:
+                ents.append(self.boss)
+            self.entities = ents
 
     def snapshot(self) -> dict:
         """返回当前世界的只读快照（dict 形态）。
@@ -283,10 +347,13 @@ class World:
             "player_pos": (float(self.player.pos.x), float(self.player.pos.y)),
             "player_tier": int(self.player.tier),
             "player_exp": float(self.player.exp),
+            "player_invuln_remaining": float(self.player.invuln_remaining),
             "frame_count": self.frame_count,
             "elapsed_s": self.elapsed_s,
             "phase": self.director.current_phase.name,
             "phase_elapsed_s": float(self.director.phase_elapsed_s),
+            "tier4_warning": bool(self.tier4_warning),
+            "boss": self._boss_snapshot(),
             "entities": [self._entity_snapshot(e) for e in ents],
             "game_result": self.game_result.name if self.game_result is not None else None,
             "stats": dict(self.stats),
@@ -305,13 +372,15 @@ class World:
     def _entity_snapshot(self, ent) -> dict:
         """把单个 Entity 序列化为 snapshot dict。
 
-        Player / Fish 携带额外业务字段（tier/heading/state 等）；其它实体只
-        暴露通用字段。所有 Vec2 走 ``[x, y]`` 列表表示，便于稳定哈希。
+        Player / Fish / Boss 携带额外业务字段（tier/heading/state/hp 等）；其它实体
+        只暴露通用字段。所有 Vec2 走 ``[x, y]`` 列表表示，便于稳定哈希。
         """
         if isinstance(ent, Player):
             kind = "player"
         elif isinstance(ent, Fish):
             kind = "fish"
+        elif isinstance(ent, Boss):
+            kind = "boss"
         else:
             kind = "entity"
         d = {
@@ -329,7 +398,33 @@ class World:
             d["heading"] = float(ent.heading)
             d["tier"] = int(ent.tier)
             d["state"] = ent.state.name
+        elif isinstance(ent, Boss):
+            d["heading"] = float(ent.heading)
+            d["tier"] = int(ent.tier)
+            d["hp"] = int(ent.hp)
+            d["max_hp"] = int(ent.max_hp)
+            d["state"] = ent.state.name if ent.state is not None else "PATROL"
+            d["enraged"] = bool(ent.enraged)
+            d["intro_remaining"] = float(ent.intro_remaining)
+            d["bite_count"] = int(ent.bite_count)
         return d
+
+    def _boss_snapshot(self) -> dict | None:
+        """便捷字段：当前 boss 的简要 snapshot；无 boss 时为 None。"""
+        b = self.boss
+        if b is None or not b.alive:
+            return None
+        return {
+            "eid": int(b.eid),
+            "pos": [float(b.pos.x), float(b.pos.y)],
+            "heading": float(b.heading),
+            "hp": int(b.hp),
+            "max_hp": int(b.max_hp),
+            "state": b.state.name if b.state is not None else "PATROL",
+            "enraged": bool(b.enraged),
+            "intro_remaining": float(b.intro_remaining),
+            "bite_count": int(b.bite_count),
+        }
 
     def snapshot_hash(self) -> str:
         """返回当前 snapshot 的稳定哈希。

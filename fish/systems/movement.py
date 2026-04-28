@@ -40,11 +40,17 @@ class MovementSystem:
         self._step_player(world.player, world.last_input_frame, dt)
         self._reflect_bounds(world.player)
 
-        # 2) 其它实体（M3-03 阶段没有；为 M3-04 留口）：纯运动学 + 反射
+        # M3-07：Boss 的运动学/边界反射统一由 BossAI 处理（CHARGE 撞墙触发
+        # STUNNED 与一般反射不同），MovementSystem 跳过 boss。
+        from fish.entities.boss import Boss
+
+        # 2) 其它实体：纯运动学 + 反射（fish 由 fish_ai 写好 vel）
         for ent in world.entities:
             if ent is world.player:
                 continue
             if not ent.alive:
+                continue
+            if isinstance(ent, Boss):
                 continue
             ent.pos = Vec2(ent.pos.x + ent.vel.x * dt, ent.pos.y + ent.vel.y * dt)
             self._reflect_bounds(ent)

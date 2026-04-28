@@ -15,9 +15,9 @@
   - BOSS → REVENGE：``world.player.tier >= TIER_GIANT(4)``
     （fish-doc/03 §5「pt 升到 4 的瞬间触发 ... 进入 PHASE_REVENGE」）
     或「曾出现 boss 但已被吃」(`world.boss is None and was_present`)
-  - REVENGE → 终态：``getattr(world, 'boss', None) is None`` 且曾出现 boss
-    → ``GameResult.VICTORY``；否则 ``phase_elapsed_s >= cfg.phases[REVENGE].duration_s``
-    超时也判 ``VICTORY``（M3-07 之前的兜底，避免 bot 卡死）。
+    - REVENGE → 终态：Boss 已不存在且 ``phase_elapsed_s`` 达到
+        ``cfg.phases[REVENGE].duration_s`` 后 → ``GameResult.VICTORY``；若该时长为
+        0 则下一帧立即胜利。
 
 外加全局 ``TIMEOUT_S`` 兜底（fish-doc/01 §4）：``world.elapsed_s + dt >= TIMEOUT_S``
 且 ``game_result is None`` → 写入 ``GameResult.TIMEOUT``。
@@ -176,15 +176,14 @@ class LevelDirector:
         """在 REVENGE 阶段判定终态。"""
         from fish.world import GameResult
 
-        # Boss 已死（且曾出现过）→ VICTORY
-        boss = getattr(world, "boss", None)
-        if self._boss_was_present and boss is None:
-            world.game_result = GameResult.VICTORY
-            return
-
-        # REVENGE 阶段超时 → VICTORY（M3-07 之前的兜底）
         revenge_timeout = world.config.phases[Phase.REVENGE].duration_s
-        if revenge_timeout > 0.0 and self.phase_elapsed_s >= revenge_timeout:
+
+        # Boss 已不存在 → 等 REVENGE 庆祝/收束窗口结束后 VICTORY。
+        boss = getattr(world, "boss", None)
+        if (
+            boss is None
+            and (revenge_timeout <= 0.0 or self.phase_elapsed_s >= revenge_timeout)
+        ):
             world.game_result = GameResult.VICTORY
             return
 
@@ -199,6 +198,15 @@ class LevelDirector:
         self._transition_log.append(
             (float(at_s), old, new_phase)
         )
+        # M3-07：进入 BOSS 阶段 → 让 World 生成 Boss 实体
+        if new_phase == Phase.BOSS and getattr(world, "boss", None) is None:
+            spawn = getattr(world, "spawn_boss", None)
+            if callable(spawn):
+                spawn()
+        # 一旦 boss 实体被创建（无论本帧 spawn 还是已存在），都标记 _boss_was_present
+        # 让后续 BOSS→REVENGE 判定可以基于「曾出现」+「已被吃」二元事实。
+        if getattr(world, "boss", None) is not None:
+            self._boss_was_present = True
         # 通知 Spawner 立即按新阶段调度（重置 _time_since_last_check 让下一帧
         # 即可补刷，避免「切到 PRESSURE 后还要等半秒才看到第一条 Tier-2」）
         spawner = getattr(world, "_spawner", None)

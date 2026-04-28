@@ -1,9 +1,11 @@
-"""fish/systems/collision.py — 碰撞检测 + 吃/被吃判定 + 同 tier 弹性反弹（M3-05）。
+"""fish/systems/collision.py — 碰撞检测 + 吃/被吃判定 + 同 tier 弹性反弹（M3-05/M3-07）。
 
 依据：
 - fish-doc/mvp/01-core-loop.md §3（吃 / 被吃判定 + 同 Tier 弹开 + DEAD）
 - fish-doc/mvp/02-fish-ecosystem.md §3（同 tier 弹开 + 鱼之间不做硬碰撞，仅同
   tier 例外作为 MVP 简化避免群体卡死）
+- fish-doc/mvp/03-boss.md §4（player ↔ boss 表：Tier-4 + 尾部 240° → 咬 boss；
+  Tier-4 + 正面 120° → 玩家死；Tier<4 任意接触 → 玩家死；STUNNED 期任意角咬）
 - 主会话裁决（progress.md「M3 实施期发现」#13）：``can_eat(eater, victim) =
   eater.tier >= victim.tier - 1``，即「以小搏大一档」。
 
@@ -16,6 +18,12 @@
 
 NPC 鱼之间：MVP 不互吃（避免群体灭绝），仅同 tier 弹开；不同 tier 互不影响。
 
+Boss 与 player（M3-07）：见 ``_resolve_player_boss``；Boss 与普通鱼 / Boss 与
+墙的逻辑由 ``BossAI`` 自行处理。
+
+副作用：每帧维护 ``world.tier4_warning`` 标志（任一 Tier-4 fish 在场且玩家
+tier < 4 时为 True，渲染层 M3-08 据此显示告警）。
+
 遍历顺序：fish 列表始终按 ``eid`` 升序遍历；fish-fish 配对按 ``(i, j)``
 ``i < j`` 走，保证 snapshot_hash 决定性（契约 #3）。
 """
@@ -25,10 +33,19 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING
 
-from toy_engine.geom import Vec2, circle_circle_overlap, circle_circle_penetration
+from toy_engine.geom import Vec2, angle_in_arc, circle_circle_overlap, circle_circle_penetration
+
+from fish.config.constants import (
+    BOSS_TAIL_ARC_HALF_DEG,
+    TIER_GIANT,
+    WORLD_H,
+    WORLD_W,
+)
 
 if TYPE_CHECKING:
     from fish.entities.base import Entity
+    from fish.entities.boss import Boss
+    from fish.entities.player import Player
     from fish.world import World
 
 
@@ -37,6 +54,8 @@ __all__ = ["CollisionSystem", "can_eat"]
 
 # 推开后再额外抬一点点，避免下一帧仍贴在 (rsum + eps) 边界上反复触发判定。
 _BOUNCE_PUSH_EPSILON: float = 1e-6
+
+_TAIL_HALF_RAD: float = math.radians(BOSS_TAIL_ARC_HALF_DEG)
 
 
 def can_eat(eater: "Entity", victim: "Entity") -> bool:
@@ -50,16 +69,37 @@ def can_eat(eater: "Entity", victim: "Entity") -> bool:
 
 
 class CollisionSystem:
-    """player ↔ fish + fish ↔ fish（仅同 tier）碰撞 / 吃 / 弹开判定。
+    """player ↔ fish + fish ↔ fish（仅同 tier）+ player ↔ boss 碰撞 / 吃 / 弹开判定。
 
     本类不直接修改 World 的统计 / 终态字段；通过 ``world.on_fish_eaten``
-    / ``world.on_player_eaten`` hook 让 World 自行落实。这样 GrowthSystem
+    / ``world.on_player_eaten`` / ``world.on_boss_bitten`` /
+    ``world.on_boss_killed`` hook 让 World 自行落实。这样 GrowthSystem
     / metrics / 手感粒子（M3-09）都能复用同一组 hook。
     """
 
     def step(self, world: "World", dt: float) -> None:
         if dt <= 0.0:
             return
+
+        # 玩家无敌剩余时间递减（每帧推进一次，含 game_result 已写入的帧；让
+        # snapshot 显示的剩余时间稳定衰减）
+        if world.player.invuln_remaining > 0.0:
+            world.player.invuln_remaining = max(
+                0.0, world.player.invuln_remaining - dt
+            )
+
+        # Tier-4 警示：任一 Tier-4 fish 在场 + player.tier < 4
+        world.tier4_warning = bool(
+            int(world.player.tier) < TIER_GIANT
+            and any(
+                f.alive
+                and int(f.tier) == TIER_GIANT
+                and 0.0 <= f.pos.x <= float(WORLD_W)
+                and 0.0 <= f.pos.y <= float(WORLD_H)
+                for f in world.fishes
+            )
+        )
+
         if world.game_result is not None:
             # 终态后不再产生新的吃/被吃事件；但同 tier 鱼群仍可能黏在一起，
             # 留待下一步 (M3-08/09) 再决定是否继续 bounce。MVP：直接 return。
@@ -85,6 +125,9 @@ class CollisionSystem:
                     world.on_fish_eaten(player, fish)
                 elif can_eat(fish, player):
                     # 等价于 fish.tier >= player.tier + 2
+                    if player.invuln_remaining > 0.0:
+                        # 无敌期间被「应当致命」的接触触发：忽略而非死亡
+                        continue
                     world.on_player_eaten(fish)
                     # 玩家已死，本帧后续碰撞也不再判定；避免 DEAD 帧继续改变
                     # fish-fish 位置 / 速度，让「死亡瞬间」snapshot 更稳定。
@@ -103,6 +146,86 @@ class CollisionSystem:
                 if not circle_circle_overlap(a.pos, a.radius, b.pos, b.radius):
                     continue
                 _elastic_bounce_same_tier(a, b)
+
+        # 3) player vs boss（M3-07）
+        boss = getattr(world, "boss", None)
+        if boss is not None and boss.alive and player.alive:
+            self._resolve_player_boss(world, player, boss)
+
+    # ------------------------------------------------------------------
+    # player ↔ boss 判定（fish-doc/03 §4）
+    # ------------------------------------------------------------------
+    def _resolve_player_boss(self, world: "World", player: "Player", boss: "Boss") -> None:
+        # 进场无碰撞窗口
+        if boss.intro_remaining > 0.0:
+            return
+        if not circle_circle_overlap(player.pos, player.radius, boss.pos, boss.radius):
+            return
+
+        from fish.ai.boss_ai import BossState
+
+        pt = int(player.tier)
+        bs = boss.state
+
+        # Tier < 4：任意接触均死亡（除非无敌窗口）
+        if pt < TIER_GIANT:
+            if player.invuln_remaining > 0.0:
+                return
+            world.on_player_eaten_by_boss(boss)
+            return
+
+        # Tier == 4：分尾部弧 / 正面弧 / STUNNED
+        # 无敌窗口既保护玩家不被连撞致死，也节流连续重叠时的多次咬击。
+        if player.invuln_remaining > 0.0:
+            return
+
+        if bs is BossState.STUNNED:
+            self._bite_boss(world, player, boss)
+            return
+
+        # 计算玩家相对 boss 的方位角（boss → player）；尾部中心 = heading + π。
+        # 二者同心或角度非有限时，方位无定义，按危险接触处理而不是误判为尾咬。
+        dx = player.pos.x - boss.pos.x
+        dy = player.pos.y - boss.pos.y
+        if not (
+            math.isfinite(dx)
+            and math.isfinite(dy)
+            and math.isfinite(boss.heading)
+            and dx * dx + dy * dy > 1e-18
+        ):
+            world.on_player_eaten_by_boss(boss)
+            return
+
+        rel = math.atan2(dy, dx)
+        tail_center = boss.heading + math.pi
+        if angle_in_arc(rel, tail_center, _TAIL_HALF_RAD):
+            self._bite_boss(world, player, boss)
+            return
+
+        # 否则视为正面（含侧面）接触：玩家死
+        # （fish-doc/03 §4 「正面 120°」严格说是 heading±60°，但 240° 尾部
+        # 已覆盖剩余范围，所以这里非尾部即"正面/侧面"危险区）
+        world.on_player_eaten_by_boss(boss)
+
+    def _bite_boss(self, world: "World", player: "Player", boss: "Boss") -> None:
+        from fish.ai.boss_ai import BossState
+        from fish.config.constants import BOSS_BITE_DAMAGE, PLAYER_INVULN_AFTER_BITE_S
+
+        boss.hp = max(0, boss.hp - BOSS_BITE_DAMAGE)
+        boss.bite_count += 1
+        # 进入 STUNNED（无论之前在哪个状态）；为玩家提供下一次稳定咬合窗口
+        boss.state = BossState.STUNNED
+        boss.state_timer = 0.0
+        boss.vel = Vec2(0.0, 0.0)
+
+        player.invuln_remaining = max(
+            player.invuln_remaining, float(PLAYER_INVULN_AFTER_BITE_S)
+        )
+
+        world.on_boss_bitten(player, boss)
+        if boss.hp <= 0:
+            boss.alive = False
+            world.on_boss_killed(boss)
 
 
 # ---------------------------------------------------------------------------

@@ -46,6 +46,9 @@ class Player(Entity):
     accel: float = 0.0
     turn_rate_rad_s: float = 0.0
     exp: float = 0.0
+    # M3-07：玩家咬中 Boss 后短暂无敌剩余秒数；> 0 时 CollisionSystem 跳过
+    # player↔boss 与 player↔fish 的"被吃"判定（fish-doc/03 §4 0.5s 无敌窗口）。
+    invuln_remaining: float = 0.0
 
     @classmethod
     def from_config(cls, cfg: LevelConfig, eid: int) -> "Player":
@@ -64,6 +67,7 @@ class Player(Entity):
             accel=PLAYER_ACCEL,
             turn_rate_rad_s=PLAYER_TURN_RATE,
             exp=0.0,
+            invuln_remaining=0.0,
         )
 
     def grow_to(self, new_tier: int) -> None:
