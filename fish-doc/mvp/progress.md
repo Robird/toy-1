@@ -1,3 +1,6 @@
+### #28 玩家无法吃同级鱼 bug
+
+【已修复】CollisionSystem 顺序调整，玩家 vs NPC 时优先判定 can_eat，玩家 tier=1 能吃 tier=1 NPC。渲染 edible 逻辑同步。273/651 测试全过。决定性哈希变动。
 # Fish MVP — 进度追踪（活文档）
 
 > **每次开始/结束任务都必须更新本文。** 任何 subagent 接到 fish 项目相关任务时，先读 [00-overview.md](00-overview.md)，再读本文了解当前状态与未决问题。

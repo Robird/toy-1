@@ -456,3 +456,16 @@ class TestSnapshotExtensions:
         snap = w.snapshot()
         assert snap["stats"]["fish_eaten_count"] == 1
         assert snap["player_exp"] > 0.0
+
+    def test_tier1_player_can_eat_tier1_fish(self) -> None:
+        """玩家升到 tier=1 后，能吃 tier=1 的 NPC 鱼（回归测试）"""
+        w = _new_world()
+        _place_player(w, 600.0, 360.0, tier=1)
+        f = _add_fish(w, tier=1, pos=Vec2(605.0, 360.0))  # 与玩家重叠
+        w.step(DT, InputFrame())
+        assert f.alive is False
+        assert f not in w.fishes
+        assert w.player.exp == pytest.approx(float(GROWTH_REWARD[1]))
+        assert w.stats["fish_eaten_count"] >= 1
+        assert w.stats["fish_eaten_tier1"] >= 1
+        assert w.game_result is None

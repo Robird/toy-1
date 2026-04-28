@@ -218,7 +218,13 @@ def draw_fish(
     """
     if fish is None:
         return
-    role = tier_to_role_name(int(getattr(fish, "tier", 1)), int(player_tier))
+    # 修正：玩家 tier=1 时，tier=1 的 NPC 应为 role_prey（可吃），而非 role_peer（同级弹开）。
+    fish_tier = int(getattr(fish, "tier", 1))
+    pt = int(player_tier)
+    if pt >= 1 and fish_tier == pt:
+        role = "role_prey"
+    else:
+        role = tier_to_role_name(fish_tier, pt)
     state_name = ""
     state = getattr(fish, "state", None)
     if state is not None:

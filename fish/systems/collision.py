@@ -118,19 +118,18 @@ class CollisionSystem:
                 ):
                     continue
 
-                if player.tier == fish.tier:
-                    _elastic_bounce_same_tier(player, fish)
-                elif can_eat(player, fish):
+                # 修正：玩家 vs NPC 时，优先判定 can_eat，玩家能吃同级和更小的鱼
+                if can_eat(player, fish):
                     fish.alive = False
                     world.on_fish_eaten(player, fish)
+                elif player.tier == fish.tier:
+                    _elastic_bounce_same_tier(player, fish)
                 elif can_eat(fish, player):
                     # 等价于 fish.tier >= player.tier + 2
                     if player.invuln_remaining > 0.0:
                         # 无敌期间被「应当致命」的接触触发：忽略而非死亡
                         continue
                     world.on_player_eaten(fish)
-                    # 玩家已死，本帧后续碰撞也不再判定；避免 DEAD 帧继续改变
-                    # fish-fish 位置 / 速度，让「死亡瞬间」snapshot 更稳定。
                     return
 
         # 2) fish vs fish（仅同 tier，仅 bounce）
