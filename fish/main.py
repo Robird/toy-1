@@ -218,6 +218,7 @@ def run_gui(
     from toy_engine.render import GeoCanvas
 
     from fish.render import FISH_PALETTE, PygRenderer
+    from fish.render.feel import FeelEffects
 
     if not pygame.get_init():
         pygame.init()
@@ -232,10 +233,18 @@ def run_gui(
     keyboard = KeyboardMouseInput(viewport=(WORLD_W, WORLD_H))
     renderer = PygRenderer(canvas, FISH_PALETTE, font)
 
+    # M3-09 手感层（仅 GUI；headless 不实例化以保持决定性）。
+    feel = FeelEffects(FISH_PALETTE, rng=SeededRng(seed=cfg.seed).spawn("feel"))
+    feel.attach_canvas(canvas)
+    world.register_listener(feel.handle)
+
     loop = GameLoop(
         world=world,
         input_source=keyboard,
         dt=DT,
+        # 慢镜：通过 callable 每帧读 feel.get_dt_scale；GameLoop 没有
+        # set_dt_scale，但 logic_dt_scale 接受 callable，等价机制。
+        logic_dt_scale=lambda _snapshot: feel.get_dt_scale(),
     )
 
     clock = pygame.time.Clock()
@@ -260,7 +269,10 @@ def run_gui(
             elif pygame.time.get_ticks() - finished_at_ms >= end_screen_seconds * 1000:
                 running = False
 
-        renderer.render(world)
+        # 手感层用基准 dt（不受慢镜缩放）推进，否则慢镜永远不结束。
+        feel.step(DT, player_pos=world.player.pos)
+
+        renderer.render(world, feel=feel)
         canvas.present()
         clock.tick(60)
 

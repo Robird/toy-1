@@ -65,6 +65,7 @@ def _draw_cartoon_fish(
     t_seconds: float,
     phase_offset: float = 0.0,
     flip_marker: bool = False,
+    squash: tuple[float, float] = (1.0, 1.0),
 ) -> None:
     """画一条标准卡通鱼（fish-doc/05 §3）。
 
@@ -84,6 +85,18 @@ def _draw_cartoon_fish(
 
     length = _fish_body_length(radius)
     width = length * 0.5
+    try:
+        sx, sy = squash
+        sx = float(sx)
+        sy = float(sy)
+    except (TypeError, ValueError):
+        sx, sy = 1.0, 1.0
+    if not math.isfinite(sx) or sx <= 0.0:
+        sx = 1.0
+    if not math.isfinite(sy) or sy <= 0.0:
+        sy = 1.0
+    length = length * sx
+    width = width * sy
 
     # 1. 椭圆身体（线性渐变 dark→light，沿短轴）
     canvas.gradient_ellipse(
@@ -164,8 +177,13 @@ def draw_player(
     palette: Palette,
     *,
     t_seconds: float = 0.0,
+    squash: tuple[float, float] = (1.0, 1.0),
 ) -> None:
-    """画玩家鱼。"""
+    """画玩家鱼。
+
+    ``squash`` 为可选 (scale_x, scale_y)；M3-09 手感层会传入「高速变细」的
+    形变。默认 (1.0, 1.0) 保证向后兼容。
+    """
     if player is None or not getattr(player, "alive", True):
         # 死亡瞬间仍画一帧（提示玩家"被吞"），调用方决定是否短路
         if player is None:
@@ -182,6 +200,7 @@ def draw_player(
         role_color_name="role_player",
         t_seconds=t_seconds,
         phase_offset=0.0,
+        squash=squash,
     )
 
 

@@ -16,7 +16,8 @@ import enum
 import hashlib
 import json
 import math
-from typing import Any
+import warnings
+from typing import Any, Callable
 
 from toy_engine.input import InputFrame
 from toy_engine.rng import SeededRng
@@ -183,6 +184,11 @@ class World:
             "boss_killed": 0,
         }
 
+        # M3-09：渲染/手感监听器。World 永不主动写回任何状态；listener 收事件
+        # dict 后**不许**修改 World。注册/不注册 listener 都不应改变
+        # ``snapshot_hash`` 序列（M3-09 决定性 DoD）。
+        self._listeners: list[Callable[[dict], None]] = []
+
         # 关卡总时长（仅供 ``is_finished`` 占位判定使用）。
         # （留在末尾，避免与 system 初始化顺序耦合。）
         # NOTE: 下方注释保留原文。
@@ -236,6 +242,38 @@ class World:
     # 业务 hook（CollisionSystem / GrowthSystem 调用；M3-09 手感粒子接同点）
     # ------------------------------------------------------------------
 
+    # ---- M3-09 listener 派发 ----
+
+    def register_listener(self, fn: "Callable[[dict], None]") -> None:
+        """注册一个事件监听器（FeelEffects.handle 等）。
+
+        监听器只接收事件 dict（见 fish/render/feel.py 文件头），**禁止**写回
+        任何 World 状态。注册/不注册都不能改变 ``snapshot_hash`` 序列。
+        """
+        if not callable(fn):
+            raise TypeError("register_listener requires a callable")
+        self._listeners.append(fn)
+
+    def _emit(self, event: dict) -> None:
+        """广播事件到所有 listener；任何 listener 异常都不能影响 World 推进。
+
+        listener 列表为空时是 no-op；这是常态（headless 跑分不注册）。
+        """
+        if not self._listeners:
+            return
+        for fn in self._listeners:
+            try:
+                fn(event)
+            except Exception as exc:  # noqa: BLE001
+                # 渲染层异常绝不许冒泡破坏决定性 / 单局推进；但保留 warning，
+                # 避免真 bug 被完全吞掉导致调试困难。
+                warnings.warn(
+                    "World listener failed while handling "
+                    f"event type={event.get('type')!r}: {fn!r}: {exc!r}",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+
     def on_fish_eaten(self, player: Player, fish: Fish) -> None:
         """玩家吃掉一条 fish：累加 exp + 计数。
 
@@ -247,6 +285,12 @@ class World:
         key = f"fish_eaten_tier{int(fish.tier)}"
         if key in self.stats:
             self.stats[key] += 1
+        self._emit({
+            "type": "fish_eaten",
+            "victim_pos": (float(fish.pos.x), float(fish.pos.y)),
+            "victim_tier": int(fish.tier),
+            "player_tier": int(player.tier),
+        })
 
     def on_player_eaten(self, fish: Fish) -> None:
         """玩家被 fish 吃：写入 DEAD 终态，标记 player.alive=False。
@@ -258,6 +302,10 @@ class World:
         self.game_result = GameResult.DEAD
         self.player.alive = False
         self.stats["death_cause_tier"] = int(fish.tier)
+        self._emit({
+            "type": "player_eaten",
+            "predator_pos": (float(fish.pos.x), float(fish.pos.y)),
+        })
 
     def on_player_eaten_by_boss(self, boss: "Boss") -> None:
         """玩家被 Boss 杀：DEAD；death_cause_tier 用 boss.tier 标识（=BOSS_TIER）。"""
@@ -266,10 +314,18 @@ class World:
         self.game_result = GameResult.DEAD
         self.player.alive = False
         self.stats["death_cause_tier"] = int(boss.tier)
+        self._emit({
+            "type": "player_eaten",
+            "predator_pos": (float(boss.pos.x), float(boss.pos.y)),
+        })
 
     def on_boss_bitten(self, player: Player, boss: "Boss") -> None:
         """玩家咬中 Boss 一口：累加统计；不修改终态。"""
         self.stats["boss_bite_count"] += 1
+        self._emit({
+            "type": "boss_bitten",
+            "boss_pos": (float(boss.pos.x), float(boss.pos.y)),
+        })
 
     def on_boss_killed(self, boss: "Boss") -> None:
         """Boss HP 归零：解除引用，让 LevelDirector 切 REVENGE。"""
@@ -277,6 +333,11 @@ class World:
         # 不立即写 game_result：交由 director 在 REVENGE 阶段判定 VICTORY
         # （fish-doc/03 §2「离场仅在 VICTORY 或 DEAD 时」+ fish-doc/01 §4
         # PHASE_REVENGE 短暂庆祝段）。
+        # 事件先发：boss_pos 用清引用前的值。
+        self._emit({
+            "type": "boss_killed",
+            "boss_pos": (float(boss.pos.x), float(boss.pos.y)),
+        })
         if self.boss is boss:
             self.boss = None
 
@@ -301,8 +362,14 @@ class World:
         return boss
 
     def on_player_grow(self, old_tier: int, new_tier: int) -> None:
-        """玩家跨过 TIER_THRESHOLDS 升级：仅 +1 计数；M3-09 接手感钩子。"""
+        """玩家跨过 TIER_THRESHOLDS 升级：仅 +1 计数 + 派发事件给手感层。"""
         self.stats["player_grow_count"] += 1
+        self._emit({
+            "type": "player_grow",
+            "old_tier": int(old_tier),
+            "new_tier": int(new_tier),
+            "player_pos": (float(self.player.pos.x), float(self.player.pos.y)),
+        })
 
     # ------------------------------------------------------------------
     # 死实体清理
