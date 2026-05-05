@@ -256,13 +256,19 @@ def run_gui(
 
     clock = pygame.time.Clock()
     finished_at_ms: int | None = None
+
+    # 锁定鼠标在窗口内，避免移出窗口导致失去控制
+    pygame.event.set_grab(True)
+
     running = True
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
+                pygame.event.set_grab(False)
                 running = False
                 break
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                pygame.event.set_grab(False)
                 running = False
                 break
         if not running:
@@ -283,6 +289,7 @@ def run_gui(
         canvas.present()
         clock.tick(60)
 
+    pygame.event.set_grab(False)
     pygame.quit()
 
 
