@@ -1,0 +1,123 @@
+:root {
+  color-scheme: dark;
+  --bg-0: #050816;
+  --bg-1: #101c3a;
+  --ink: #eff6ff;
+  --muted: #c9d7ff;
+  --accent: #7ee7ff;
+  --accent-warm: #ffd166;
+  --glass: rgba(10, 16, 38, 0.62);
+  --border: rgba(173, 219, 255, 0.22);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at top, rgba(73, 135, 255, 0.22), transparent 35%),
+    radial-gradient(circle at bottom, rgba(255, 209, 102, 0.16), transparent 32%),
+    linear-gradient(180deg, var(--bg-1), var(--bg-0) 55%);
+}
+
+.app-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+#gameCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+.hud {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(960px, calc(100% - 24px));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
+  pointer-events: none;
+}
+
+.hud-top {
+  top: 12px;
+}
+
+.hud-bottom {
+  bottom: 12px;
+}
+
+.brand {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.metrics {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  color: var(--muted);
+}
+
+.hint {
+  color: var(--muted);
+}
+
+#resetButton {
+  pointer-events: auto;
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 16px;
+  font: inherit;
+  font-weight: 700;
+  color: #062132;
+  background: linear-gradient(135deg, var(--accent), #a9fff4);
+  cursor: pointer;
+}
+
+#resetButton:hover {
+  filter: brightness(1.06);
+}
+
+@media (max-width: 720px) {
+  .hud {
+    width: calc(100% - 16px);
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .hud,
+  .metrics {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  #resetButton {
+    align-self: stretch;
+  }
+}

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>宇宙吸吸乐 MVP</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <div class="hud hud-top">
+      <div class="brand">宇宙吸吸乐</div>
+      <div class="metrics">
+        <span id="stageLabel">小石头</span>
+        <span id="massLabel">质量 1</span>
+      </div>
+    </div>
+
+    <canvas id="gameCanvas" aria-label="宇宙吸吸乐游戏画面"></canvas>
+
+    <div class="hud hud-bottom">
+      <div class="hint">拖动或移动指针，让中心小石头吸收更小的天体</div>
+      <button id="resetButton" type="button">重新开始</button>
+    </div>
+  </main>
+
+  <script src="./main.js"></script>
+</body>
+</html>
