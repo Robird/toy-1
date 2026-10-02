@@ -19,6 +19,10 @@
     .brand span { display: inline-grid; place-items: center; width: 34px; height: 34px; margin-right: 10px; border-radius: 11px; background: var(--green); color: #fffaf0; }
     .chapter { color: #707d72; font-size: 13px; }
     .chapter strong { color: var(--green); font-size: 17px; margin-left: 6px; }
+    .header-meta { display: flex; align-items: center; gap: 18px; }
+    .score { display: inline-flex; align-items: center; gap: 7px; padding: 8px 12px; border-radius: 12px; background: #f3e8ce; color: #806024; font-size: 13px; white-space: nowrap; }
+    .score strong { font-size: 18px; }
+    .score.earned { animation: pop .35s ease-out; }
     .lesson { position: relative; overflow: hidden; display: grid; grid-template-columns: 260px 1fr; gap: 36px; padding: 31px 42px 32px; background: #fffdf7; border: 1px solid #e6e3d6; border-radius: 30px; box-shadow: 0 8px 32px #4b604b06; }
     .friend { display: flex; flex-direction: column; align-items: center; justify-content: center; }
     .cat-scene { width: 234px; height: 216px; position: relative; display: grid; place-items: center; }
@@ -89,6 +93,9 @@
     @media (max-width: 520px) {
       .brand { font-size: 16px; }
       .chapter { font-size: 11px; }
+      .chapter-label { display: none; }
+      .header-meta { gap: 10px; }
+      .score { padding: 6px 9px; }
       .lesson { grid-template-columns: 1fr; gap: 13px; padding: 19px 22px 23px; }
       .cat-scene { height: 136px; }
       .cat-scene::before { width: 126px; height: 126px; }
@@ -115,7 +122,7 @@
 </head>
 <body>
 <main>
-  <header class="header"><p class="brand"><span aria-hidden="true">Aa</span>单词小冒险</p><div class="chapter">键盘小课堂 <strong id="chapter">01</strong></div></header>
+  <header class="header"><p class="brand"><span aria-hidden="true">Aa</span>单词小冒险</p><div class="header-meta"><div class="chapter"><span class="chapter-label">键盘小课堂</span> <strong id="chapter">01</strong></div><div class="score" id="score-badge" role="status" aria-live="polite" aria-atomic="true"><span aria-hidden="true">★</span><span>积分 <strong id="score">0</strong></span></div></div></header>
   <section class="lesson" id="lesson" aria-labelledby="task-title">
     <div class="friend">
       <div class="cat-scene">
@@ -180,6 +187,49 @@
   let levelIndex = 0, level, position = 0, complete = false, choices = new Set();
   let voices = [], audioRole = null, audioGeneration = 0, audioTimer = null, speechWatchdog = null;
   let activeUtterance = null, hoverTimer = null, needsGesture = false;
+  // 积分在本次打开页面期间累计，切换关卡和重玩均保留。
+  let score = 0, effectsContext = null;
+  const effectNotes = new Set();
+
+  function prepareEffects() {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return null;
+    try {
+      if (!effectsContext) effectsContext = new AudioContext();
+      if (effectsContext.state === 'suspended') effectsContext.resume().catch(() => {});
+      return effectsContext;
+    } catch (_) { return null; }
+  }
+
+  function stopEffects() {
+    for (const note of effectNotes) {
+      try { note.stop(); } catch (_) {}
+    }
+  }
+
+  function playVictorySound() {
+    const context = prepareEffects();
+    if (!context) return 0;
+    stopEffects();
+    try {
+      const start = context.currentTime + .02;
+      // 四个逐渐上行的音符，自带轻柔包络，无需外部音频文件。
+      [523.25, 659.25, 783.99, 1046.5].forEach((frequency, index) => {
+        const note = context.createOscillator();
+        const gain = context.createGain();
+        const time = start + index * .12;
+        note.type = 'triangle'; note.frequency.setValueAtTime(frequency, time);
+        gain.gain.setValueAtTime(0, time);
+        gain.gain.linearRampToValueAtTime(.1, time + .015);
+        gain.gain.exponentialRampToValueAtTime(.001, time + .24);
+        note.connect(gain); gain.connect(context.destination);
+        effectNotes.add(note);
+        note.onended = () => { effectNotes.delete(note); note.disconnect(); gain.disconnect(); };
+        note.start(time); note.stop(time + .27);
+      });
+      return 680;
+    } catch (_) { stopEffects(); return 0; }
+  }
 
   function validateLevel(config) {
     if (!config || typeof config.id !== 'string' || !/^[A-Z]+$/.test(config.word) ||
@@ -219,7 +269,7 @@
   }
 
   // 语音独立于输入进度。只有当前播放批次可以更新界面，取消后的回调不会干扰新输入。
-  function playSequence(steps, role) {
+  function playSequence(steps, role, startDelay = 0) {
     stopAudio();
     if (!supported || document.hidden) return;
     clearHover(); refreshVoices();
@@ -276,7 +326,8 @@
       speechWatchdog = setTimeout(() => { if (!settled) { settled = true; fail('timeout'); } }, 10000);
       try { synth.speak(speech); } catch (_) { fail('failed'); }
     }
-    run(0);
+    if (startDelay) audioTimer = setTimeout(() => run(0), startDelay);
+    else run(0);
   }
 
   function playPrompt() {
@@ -322,6 +373,7 @@
       return;
     }
     clearHover();
+    prepareEffects();
     const correct = letter === level.word[position];
     if (!correct) {
       flash(letter, 'try-again');
@@ -334,15 +386,19 @@
     complete = position === level.word.length;
     renderProgress();
     if (complete) {
+      score++;
+      $('score').textContent = score;
+      $('score-badge').classList.add('earned');
       $('lesson').classList.add('complete');
       $('task-title').textContent = '太棒啦，你拼出来了！';
       $('feedback').textContent = level.word + '，就是“' + level.meaning + '”！';
       $('friend-caption').textContent = '又认识了一个英文单词！';
-      $('completion-message').textContent = '你按顺序找到了每一个字母。';
+      $('completion-message').textContent = '过关 +1 分！你已经获得 ' + score + ' 分啦。';
       $('completion').hidden = false;
       $('next').textContent = levelIndex < LEVELS.length - 1 ? '下一关 →' : '再玩一次 ↻';
       buttons.forEach(button => { button.disabled = true; });
-      playSequence([{ text: letter, letter: true }, { text: level.word.toLowerCase() }], 'celebration');
+      const soundDuration = playVictorySound();
+      playSequence([{ text: letter, letter: true }, { text: level.word.toLowerCase() }], 'celebration', soundDuration);
     } else {
       $('feedback').textContent = '找对了 ' + letter + '！继续找第 ' + (position + 1) + ' 个字母吧。';
       playSequence([{ text: letter, letter: true }], 'letter');
@@ -374,11 +430,12 @@
     held.clear(); clearHover(); buttons.forEach(button => button.classList.remove('pressed'));
   }
   function startLevel(index) {
-    stopAudio(); clearHeld();
+    stopAudio(); stopEffects(); clearHeld();
     flashTimers.forEach(timer => clearTimeout(timer)); flashTimers.clear();
     levelIndex = index; level = LEVELS[index]; position = 0; complete = false;
     choices = chooseLetters(level);
     $('lesson').classList.remove('complete'); $('completion').hidden = true;
+    $('score-badge').classList.remove('earned');
     $('chapter').textContent = String(index + 1).padStart(2, '0');
     $('eyebrow').textContent = '第 ' + (index + 1) + ' 关 · 认识新单词';
     $('task-title').textContent = '一起拼出“' + level.meaning + '”的英文';
@@ -431,11 +488,11 @@
     if (event.isTrusted && needsGesture && !audioRole && position === 0 &&
         !(event.target instanceof Element && event.target.closest('button'))) playPrompt();
   });
-  $('listen').addEventListener('click', playPrompt);
+  $('listen').addEventListener('click', () => { prepareEffects(); stopEffects(); playPrompt(); });
   $('next').addEventListener('click', () => startLevel(levelIndex < LEVELS.length - 1 ? levelIndex + 1 : levelIndex));
   window.addEventListener('blur', clearHeld);
-  document.addEventListener('visibilitychange', () => { if (document.hidden) { clearHeld(); stopAudio(); } });
-  window.addEventListener('pagehide', () => { clearHeld(); stopAudio(); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { clearHeld(); stopAudio(); stopEffects(); } });
+  window.addEventListener('pagehide', () => { clearHeld(); stopAudio(); stopEffects(); });
   if (supported) { refreshVoices(); synth.addEventListener('voiceschanged', refreshVoices); }
   startLevel(0);
 })();
