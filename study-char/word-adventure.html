@@ -231,6 +231,27 @@
     } catch (_) { stopEffects(); return 0; }
   }
 
+  function playErrorSound() {
+    const context = prepareEffects();
+    if (!context) return 0;
+    try {
+      const note = context.createOscillator();
+      const gain = context.createGain();
+      const start = context.currentTime + .01;
+      note.type = 'triangle';
+      note.frequency.setValueAtTime(330, start);
+      note.frequency.exponentialRampToValueAtTime(220, start + .16);
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(.09, start + .015);
+      gain.gain.exponentialRampToValueAtTime(.001, start + .19);
+      note.connect(gain); gain.connect(context.destination);
+      effectNotes.add(note);
+      note.onended = () => { effectNotes.delete(note); note.disconnect(); gain.disconnect(); };
+      note.start(start); note.stop(start + .21);
+      return 220;
+    } catch (_) { return 0; }
+  }
+
   function validateLevel(config) {
     if (!config || typeof config.id !== 'string' || !/^[A-Z]+$/.test(config.word) ||
         typeof config.meaning !== 'string' || typeof config.illustration !== 'string' ||
@@ -370,6 +391,7 @@
     if (complete) return;
     if (!choices.has(letter)) {
       $('feedback').textContent = '找找亮着的字母，它们都可以试一试。';
+      playErrorSound();
       return;
     }
     clearHover();
@@ -378,7 +400,8 @@
     if (!correct) {
       flash(letter, 'try-again');
       $('feedback').textContent = '这是 ' + letter + '。再找找第 ' + (position + 1) + ' 个字母，慢慢来。';
-      playSequence([{ text: letter, letter: true }], 'letter');
+      const soundDuration = playErrorSound();
+      playSequence([{ text: letter, letter: true }], 'letter', soundDuration);
       return;
     }
     position++;
