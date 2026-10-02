@@ -22,7 +22,20 @@
     .header-meta { display: flex; align-items: center; gap: 18px; }
     .score { display: inline-flex; align-items: center; gap: 7px; padding: 8px 12px; border-radius: 12px; background: #f3e8ce; color: #806024; font-size: 13px; white-space: nowrap; }
     .score strong { font-size: 18px; }
-    .score.earned { animation: pop .35s ease-out; }
+    .score-value { position: relative; display: inline-block; }
+    .score-burst { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+    .score-burst::before { content: ''; position: absolute; left: 50%; top: 50%; width: 34px; height: 34px; border: 2px solid var(--gold); border-radius: 50%; opacity: 0; transform: translate(-50%, -50%) scale(.45); }
+    .score-bonus { position: absolute; top: 100%; right: 0; margin-top: 4px; padding: 2px 7px; border-radius: 9px; background: #fff7dc; color: #99631b; font-size: 16px; font-weight: 800; line-height: 1.25; box-shadow: 0 2px 8px #ad7a2520; opacity: 0; }
+    .score-spark { position: absolute; left: 50%; top: 50%; color: #d69832; font-size: 14px; line-height: 1; opacity: 0; }
+    .score-spark:nth-of-type(2) { --spark-x: -27px; --spark-y: -14px; }
+    .score-spark:nth-of-type(3) { --spark-x: 17px; --spark-y: -16px; }
+    .score-spark:nth-of-type(4) { --spark-x: -24px; --spark-y: 18px; }
+    .score-spark:nth-of-type(5) { --spark-x: 15px; --spark-y: 18px; }
+    .score.earned { animation: score-glow .68s ease-out; }
+    .score.earned strong { display: inline-block; animation: pop .35s ease-out; }
+    .score.earned .score-burst::before { animation: score-ring .68s ease-out; }
+    .score.earned .score-bonus { animation: score-gain 1s ease-out both; }
+    .score.earned .score-spark { animation: score-spark .68s ease-out both; }
     .lesson { position: relative; overflow: hidden; display: grid; grid-template-columns: 260px 1fr; gap: 36px; padding: 31px 42px 32px; background: #fffdf7; border: 1px solid #e6e3d6; border-radius: 30px; box-shadow: 0 8px 32px #4b604b06; }
     .friend { display: flex; flex-direction: column; align-items: center; justify-content: center; }
     .cat-scene { width: 234px; height: 216px; position: relative; display: grid; place-items: center; }
@@ -76,6 +89,10 @@
     .sparkles span:nth-child(2) { right: 2%; top: 11%; animation-delay: .2s; }
     .sparkles span:nth-child(3) { right: 3%; bottom: 20%; animation-delay: .4s; }
     @keyframes pop { 50% { transform: scale(1.08); } }
+    @keyframes score-glow { 35% { background: #ffe3a1; box-shadow: 0 0 0 5px #e7aa5028, 0 0 20px #e7aa5040; transform: scale(1.06); } }
+    @keyframes score-ring { 20% { opacity: .8; } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.8); } }
+    @keyframes score-gain { 0% { opacity: 0; transform: translateY(4px) scale(.7); } 20%, 55% { opacity: 1; transform: translateY(-3px) scale(1); } 100% { opacity: 0; transform: translateY(-22px) scale(.95); } }
+    @keyframes score-spark { 0% { opacity: 0; transform: translate(-50%, -50%) scale(.3); } 25% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -50%) translate(var(--spark-x), var(--spark-y)) scale(.8) rotate(35deg); } }
     @keyframes nudge { 30% { transform: translateX(-3px); } 65% { transform: translateX(3px); } }
     @keyframes cat-dance { 25% { transform: translateY(-9px) rotate(-5deg); } 75% { transform: translateY(-9px) rotate(5deg); } }
     @keyframes twinkle { 50% { transform: scale(1.25) rotate(15deg); } }
@@ -117,12 +134,21 @@
     }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { animation: none !important; transition: none !important; }
+      .score.earned .score-bonus { opacity: 1; transform: none; }
     }
   </style>
 </head>
 <body>
 <main>
-  <header class="header"><p class="brand"><span aria-hidden="true">Aa</span>单词小冒险</p><div class="header-meta"><div class="chapter"><span class="chapter-label">当前关卡</span> <strong id="chapter">01</strong></div><div class="score" id="score-badge" role="status" aria-live="polite" aria-atomic="true"><span aria-hidden="true">★</span><span>积分 <strong id="score">0</strong></span></div></div></header>
+  <header class="header">
+    <p class="brand"><span aria-hidden="true">Aa</span>单词小冒险</p>
+    <div class="header-meta">
+      <div class="chapter"><span class="chapter-label">当前关卡</span> <strong id="chapter">01</strong></div>
+      <div class="score" id="score-badge" role="status" aria-live="polite" aria-atomic="true">
+        <span aria-hidden="true">★</span><span>积分 <span class="score-value"><strong id="score">0</strong><span class="score-burst" aria-hidden="true"><span class="score-bonus">+1</span><span class="score-spark">✦</span><span class="score-spark">✧</span><span class="score-spark">✧</span><span class="score-spark">✦</span></span></span></span>
+      </div>
+    </div>
+  </header>
   <section class="lesson" id="lesson" aria-labelledby="task-title">
     <div class="friend">
       <div class="cat-scene">
