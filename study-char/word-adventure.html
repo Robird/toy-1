@@ -672,7 +672,8 @@
     {"id":"your-01","word":"YOUR","meaning":"你的；你们的","illustration":""},
     {"id":"zoo-01","word":"ZOO","meaning":"动物园","illustration":""}
   ];
-  const NEXT_WORD_DELAY = 3200;
+  const NEXT_WORD_DELAY = 1000;
+  const HOVER_DELAY = 240;
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   const rows = ['QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM'];
   const $ = id => document.getElementById(id);
@@ -686,6 +687,7 @@
   let nextWordTimer = null;
   let voices = [], audioRole = null, audioGeneration = 0, audioTimer = null, speechWatchdog = null;
   let activeUtterance = null, hoverTimer = null, needsGesture = false;
+  let hoveredLetter = null, hoverReady = false;
   const SCORE_STORAGE_KEY = 'word-adventure-score-v1';
   function loadSavedScore() {
     try {
@@ -808,7 +810,27 @@
   }
 
   function refreshVoices() { if (supported) voices = synth.getVoices(); }
-  function clearHover() { clearTimeout(hoverTimer); hoverTimer = null; }
+  function clearHover() {
+    clearTimeout(hoverTimer); hoverTimer = null;
+    hoveredLetter = null; hoverReady = false;
+  }
+  // 悬停只替换悬停语音；提示和按键反馈优先，结束后再读仍停留的最新字母。
+  function playHoveredLetter() {
+    if (!supported || document.hidden || needsGesture || complete || !hoverReady || !hoveredLetter ||
+        buttons.get(hoveredLetter)?.disabled || (audioRole && audioRole !== 'hover')) return;
+    const letter = hoveredLetter;
+    hoverReady = false; // 每次停留只读一次，不能在语音结束后循环重读。
+    playSequence([{ text: letter, letter: true }], 'hover');
+  }
+  function requestHover(letter) {
+    clearHover();
+    if (!supported || document.hidden || complete || buttons.get(letter)?.disabled) return;
+    hoveredLetter = letter;
+    hoverTimer = setTimeout(() => {
+      hoverTimer = null; hoverReady = true;
+      playHoveredLetter();
+    }, HOVER_DELAY);
+  }
   function clearListening() { for (const slot of $('slots').children) slot.classList.remove('listening'); }
   function stopAudio() {
     audioGeneration++;
@@ -824,7 +846,7 @@
   function playSequence(steps, role, startDelay = 0) {
     stopAudio();
     if (!supported || document.hidden) return;
-    clearHover(); refreshVoices();
+    refreshVoices();
     const generation = audioGeneration;
     let voiceNotice = '';
     audioRole = role;
@@ -839,10 +861,11 @@
       $('listen').removeAttribute('aria-busy');
       renderAudioState(complete ? '你已经拼出整个单词啦' : '轮到你啦，找找下一个字母');
       if (complete) scheduleNextWord();
+      else playHoveredLetter();
     }
     function fail(error) {
       if (generation !== audioGeneration) return;
-      stopAudio();
+      clearHover(); stopAudio();
       if (error === 'not-allowed') {
         needsGesture = true;
         $('audio-notice').textContent = '直接点击或按下一个字母，声音就会自动开始。';
@@ -861,7 +884,7 @@
       activeUtterance = speech;
       const chinese = step.lang === 'zh-CN';
       speech.lang = step.lang || 'en-US';
-      speech.rate = chinese ? .85 : step.letter ? .78 : .72;
+      speech.rate = chinese ? .85 : step.letter ? 1.0 : .72;
       const candidates = voices.filter(voice => (chinese ? /^zh(?:-|$)/i : /^en(?:-|$)/i).test(voice.lang));
       const preferred = voice => (chinese ? /^zh-(?:CN|Hans(?:-CN)?)$/i : /^en-US$/i).test(voice.lang);
       speech.voice = candidates.find(voice => preferred(voice) && voice.localService) ||
@@ -877,16 +900,16 @@
       }
       let settled = false;
       speech.onstart = () => {
-        if (generation !== audioGeneration) return;
+        if (generation !== audioGeneration || settled) return;
         needsGesture = false; $('audio-notice').textContent = voiceNotice;
         clearListening();
-        if (role === 'prompt' && Number.isInteger(step.slot)) $('slots').children[step.slot]?.classList.add('listening');
+        if (Number.isInteger(step.slot)) $('slots').children[step.slot]?.classList.add('listening');
         renderAudioState((role === 'prompt' ? '听一听 · ' : '正在读 · ') + step.text);
       };
       speech.onend = () => {
         if (generation !== audioGeneration || settled) return;
         settled = true; clearTimeout(speechWatchdog); clearListening();
-        audioTimer = setTimeout(() => run(index + 1), step.letter ? 230 : 380);
+        audioTimer = setTimeout(() => run(index + 1), step.letter ? 100 : 380);
       };
       speech.onerror = event => {
         if (generation !== audioGeneration || settled) return;
@@ -900,18 +923,20 @@
     else run(0);
   }
 
-  function playPrompt() {
+  function playPrompt(startDelay = 0) {
     const wordAndMeaning = [
       { text: currentWord.speech },
       { text: currentWord.meaning, lang: 'zh-CN' }
     ];
+    const spelling = [...currentWord.letters].map((letter, slot) => ({ text: letter, letter: true, slot }));
     if (complete) {
-      playSequence(wordAndMeaning, 'celebration');
+      // 输入时的字母语音可能被后续按键打断；拼对后重新从首字母完整拼读。
+      playSequence([...spelling, ...wordAndMeaning], 'celebration', startDelay);
       return;
     }
     playSequence([
       ...wordAndMeaning,
-      ...[...currentWord.letters].map((letter, slot) => ({ text: letter, letter: true, slot })),
+      ...spelling,
       ...wordAndMeaning
     ], 'prompt');
   }
@@ -970,12 +995,13 @@
 
   function inputLetter(letter) {
     if (complete) return;
+    clearHover();
     if (!choices.has(letter)) {
+      stopAudio();
       renderFeedback('找找亮着的字母，它们都可以试一试。');
       playErrorSound();
       return;
     }
-    clearHover();
     prepareEffects();
     const correct = letter === currentWord.letters[position];
     if (!correct) {
@@ -1003,11 +1029,7 @@
       $('completion').hidden = false;
       buttons.forEach(button => { button.disabled = true; });
       const soundDuration = playVictorySound();
-      playSequence([
-        { text: letter, letter: true },
-        { text: currentWord.speech },
-        { text: currentWord.meaning, lang: 'zh-CN' }
-      ], 'celebration', soundDuration);
+      playPrompt(soundDuration);
       scheduleNextWord();
     } else {
       renderFeedback('找对了 ' + letter + '！继续找第 ' + (position + 1) + ' 个字母吧。');
@@ -1024,14 +1046,11 @@
       button.dataset.letter = letter; button.setAttribute('aria-label', '字母 ' + letter);
       button.addEventListener('click', () => inputLetter(letter));
       button.addEventListener('pointerenter', event => {
-        if (event.pointerType === 'touch' || button.disabled || complete || audioRole) return;
-        clearHover();
-        hoverTimer = setTimeout(() => {
-          hoverTimer = null;
-          if (!audioRole && !complete && !button.disabled) playSequence([{ text: letter, letter: true }], 'hover');
-        }, 240);
+        if (event.pointerType !== 'touch') requestHover(letter);
       });
-      button.addEventListener('pointerleave', clearHover);
+      button.addEventListener('pointerleave', () => {
+        if (hoveredLetter === letter) clearHover();
+      });
       buttons.set(letter, button); row.appendChild(button);
     }
     $('keyboard').appendChild(row);
@@ -1107,7 +1126,7 @@
     if (event.isTrusted && needsGesture && !audioRole && position === 0 &&
         !(event.target instanceof Element && event.target.closest('button'))) playPrompt();
   });
-  $('listen').addEventListener('click', () => { prepareEffects(); stopEffects(); playPrompt(); });
+  $('listen').addEventListener('click', () => { clearHover(); prepareEffects(); stopEffects(); playPrompt(); });
   $('letter-case').addEventListener('click', () => {
     lowercaseLetters = !lowercaseLetters;
     renderLetterCase();
