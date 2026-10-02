@@ -8,7 +8,7 @@
 
 用户可以直接复制下面这段话。调整数量或主题即可重复使用。
 
-> 请读取 WORD_ADVENTURE_WORKFLOW.md，检查 word-adventure.html 和已有批次记录，参考我指定的词汇文件补齐未收录条目。使用 gpt-6-luna 子 agent 并行整理释义和图示；有合适 emoji 就显示，没有则用中文与听音学习，包含抽象词和短语。难度使用页面级配置，不在每条词汇里重复设置。按指南完成审稿、预览、验收和接入，保留单 HTML 可直接打开的使用方式，更新批次记录。词表已经全部收录时说明覆盖情况，不重复添加。请实际完成制作。
+> 请读取 WORD_ADVENTURE_WORKFLOW.md，检查 word-adventure.html、word-adventure-words.js 和已有批次记录，参考我指定的词汇文件补齐未收录条目。使用 gpt-6-luna 子 agent 并行整理释义和图示；有合适 emoji 就显示，没有则用中文与听音学习，包含抽象词和短语。难度使用页面级配置，不在每条词汇里重复设置。按指南完成审稿、预览、验收和接入，保留无需本地服务器、可直接打开 HTML 的使用方式，更新批次记录。词表已经全部收录时说明覆盖情况，不重复添加。请实际完成制作。
 
 这段提示明确授权并行制作、页面修改和验收。执行时仍以用户在当前会话提出的数量、主题、风格及其他约束为准；不需要再逐词询问普通选词或绘制细节。
 
@@ -19,12 +19,13 @@
 | 项目 | 当前状态 |
 | --- | --- |
 | 游戏文件 | 仓库根目录的 `word-adventure.html` |
-| 单词池 | `WORD_POOL`，已有 443 条记录 |
+| 单词池 | `word-adventure-words.js` 中的 `window.WORD_ADVENTURE_WORDS`，已有 443 条记录；页面通过 `WORD_POOL` 引用 |
+| 本地打开 | HTML 和词表文件放在同一目录，直接打开 `word-adventure.html`；无需构建或本地服务器 |
 | 大纲覆盖 | `小学英语大纲词汇.txt` 的全部 441 条，另保留原有 HAT 和 CUP |
 | 图示 | 188 条 emoji、1 条猫 SVG、254 条中文与听音 |
 | 后续素材策略 | emoji 优先，无合适图示时中文提示；SVG 按需补充 |
-| 渲染入口 | `startLevel` 支持猫 SVG、emoji 和中文提示 |
-| 数据检查 | `validateLevel` 支持英文单词和含空格短语；尚无 SVG 注册表检查 |
+| 渲染入口 | `startWord` 支持猫 SVG、emoji 和中文提示 |
+| 数据检查 | `validateWord` 支持英文单词和含空格短语；尚无 SVG 注册表检查 |
 | 难度配置 | `DEFAULT_GAME_OPTIONS` 集中配置，URL 可覆盖；词条不保存难度字段 |
 | 短语支持 | 空格自动分隔，仅需输入字母；长词使用较小拼写格 |
 | 出题方式 | `drawWord` 从完整单词池等概率随机抽取，允许重复 |
@@ -39,7 +40,7 @@
 ## 开始一批制作
 
 1. 读取适用的 `AGENTS.md`、本文、游戏代码、素材目录及最近的批次记录。检查现有工作区改动，保留用户正在进行的工作。
-2. 从实际 `WORD_POOL` 或已建立的正式数据源提取单词、ID 和插画引用。文档中的旧清单不能替代代码。
+2. 从 `word-adventure-words.js` 的实际词表提取单词、ID 和插画引用。文档中的旧清单不能替代正式数据。
 3. 查找未完成批次：先区分已接入、已验收但未接入、待验收、待返工和未开始，复用可用成果。未完成工作与本轮新词数量分别计数，避免重复计入。
 4. 确定本批数量、词义和文件负责人，将任务清单写入新的或正在续做的批次记录。
 5. 将候选词分成 emoji 和中文提示两类，均可直接接入。只有本批明确需要新增 SVG 时，才执行可选的通用插画接口改造。
@@ -113,7 +114,7 @@ emoji 和中文关卡不需要独立图片文件或 `artKey`。批次记录保�
 
 1. 将现有猫 SVG 保存为可维护的源素材，作为所有绘图任务的视觉参照。
 2. 建立按 `artKey` 查询的插画注册表和统一插画容器，替换按猫 emoji 判断的 SVG 特例。
-3. 同步调整 `validateLevel`，检查新增字段与素材引用；继续支持直接使用 emoji 的关卡。
+3. 同步调整 `validateWord`，检查新增字段与素材引用；继续支持直接使用 emoji 的词条。
 4. 为通用插画保留响应式尺寸、无障碍名称及完成关卡时的动画。当前 CSS 针对 `.cat` 和 `.emoji`，新增容器或类名后需要同步处理。
 5. SVG 随 HTML 内嵌，保证成品无需网络或本地服务器即可打开。
 
@@ -147,6 +148,7 @@ emoji 和中文关卡不需要独立图片文件或 `artKey`。批次记录保�
 ```text
 WORD_ADVENTURE_WORKFLOW.md
 word-adventure.html
+word-adventure-words.js               正式词表，与页面放在同一目录
 assets/word-adventure/                 有 SVG 时才建立，存放已验收源文件
   cat.svg
   pig.svg
@@ -180,7 +182,7 @@ docs/word-adventure-batches/
   "task_name": "word_candidates_a",
   "model": "gpt-6-luna",
   "fork_turns": "none",
-  "message": "工作目录为项目根目录，请先读取 WORD_ADVENTURE_WORKFLOW.md、指定词表和 word-adventure.html。负责主 agent 分配的非空词条范围，跳过已有词。只写指定 worker 目录的 candidates.json，不修改主 HTML、其他 worker 文件或正式清单，不再派生 agent。每条包含 id、word、meaning、illustration；word 使用大写并保留词内空格，id 用小写连字符。难度不放进词条。emoji 无可靠匹配时 illustration 为空串，不漏抽象词和短语，不用邻近物体凑图。必要时包含正确的 display 和 speech。单独记录源范围及疑问，UTF8 无 BOM 写入，返回文件路径和摘要。"
+  "message": "工作目录为项目根目录，请先读取 WORD_ADVENTURE_WORKFLOW.md、指定词表、word-adventure.html 和 word-adventure-words.js。负责主 agent 分配的非空词条范围，跳过已有词。只写指定 worker 目录的 candidates.json，不修改主 HTML、其他 worker 文件或正式清单，不再派生 agent。每条包含 id、word、meaning、illustration；word 使用大写并保留词内空格，id 用小写连字符。难度不放进词条。emoji 无可靠匹配时 illustration 为空串，不漏抽象词和短语，不用邻近物体凑图。必要时包含正确的 display 和 speech。单独记录源范围及疑问，UTF8 无 BOM 写入，返回文件路径和摘要。"
 }
 ```
 
@@ -206,7 +208,7 @@ SVG 任务要明确具体单词与义项、参考猫 SVG、统一画布和风格
 1. 合并候选数据，检查单词、ID、中文义项和图示；跨 worker 去重，确认词条不含重复难度配置。完整覆盖时逐条对照源词，不能只对比总条数。
 2. 生成批次预览页，在接近实际大小的图示旁显示单词和中文含义。SVG 批次增加猫参照和约 150 × 140 px 的缩略图。
 3. 使用可用的浏览器、渲染或截图查看能力检查图示与词义一致、可辨认、无裁切；emoji 检查是否正常显示，SVG 额外检查风格协调及文件完整性。仅阅读字符或 SVG 代码不能记录成视觉验收通过。
-4. emoji 和中文条目直接接入 `WORD_POOL`；SVG 条目通过后保存源素材并接入注册表。集成只使用游戏字段，不把候选备注放进正式关卡。
+4. emoji 和中文条目直接接入 `word-adventure-words.js` 的 `window.WORD_ADVENTURE_WORDS`；SVG 条目通过后保存源素材并接入注册表。集成只使用游戏字段，不把候选备注放进正式关卡。
 5. 按本轮授权做必要的游戏验收：图示或中文正确、空格不占字母格、重复字母能完成、听音文本与词义一致、积分及下一关正常、窄屏长词可用。检查全局难度的正常值、无效值和隐藏拼写模式。
 6. 随机出题不能保证覆盖新词；验收时用预览页或临时的指定关卡方式逐个检查。临时调试入口不进入正式成品。
 
@@ -239,7 +241,7 @@ SVG 任务要明确具体单词与义项、参考猫 SVG、统一画布和风格
 ## 本批接口与文件改动
 
 记录实际采用的数据字段、插画注册方式、源文件和构建命令。
-emoji 和中文批次注明直接接入 WORD_POOL；有 SVG 且没有构建脚本时注明由主 agent 同步内嵌到 HTML。记录页面级默认设置和 URL 覆盖方式。
+emoji 和中文批次注明直接接入 word-adventure-words.js；有 SVG 且没有构建脚本时注明由主 agent 同步内嵌到 HTML。记录页面级默认设置和 URL 覆盖方式。
 
 ## 验收结果
 
@@ -256,7 +258,7 @@ emoji 和中文批次注明直接接入 WORD_POOL；有 SVG 且没有构建脚�
 
 ## 每批完成后交付
 
-交付可直接打开的 `word-adventure.html`、批次记录和预览页；制作了 SVG 时再附正式源素材。简要报告来源覆盖、新增与总词数、emoji 与中文提示数量、全局配置使用方式、验收结果及剩余事项，附文件链接。
+交付可直接打开的 `word-adventure.html` 及同目录的 `word-adventure-words.js`、批次记录和预览页；制作了 SVG 时再附正式源素材。简要报告来源覆盖、新增与总词数、emoji 与中文提示数量、全局配置使用方式、验收结果及剩余事项，附文件链接。
 
 更新本文的项目状态，尤其是通用插画接口是否已经实现、正式数据在哪里、是否有构建命令、最近批次编号及当前总词数。工具可用性和并发数量以新会话实际情况为准。
 
