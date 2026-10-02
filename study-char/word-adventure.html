@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="听单词、找字母，帮小猫拼出它的英文名字。">
+  <meta name="description" content="听单词、找字母，认识简单英文单词，开启一关又一关的小冒险。">
   <title>单词小冒险 · 键盘小课堂</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%2338685b'/%3E%3Ctext x='16' y='24' text-anchor='middle' font-size='24'%3E🐱%3C/text%3E%3C/svg%3E">
   <style>
@@ -67,7 +67,7 @@
     .next { border: 0; border-radius: 13px; background: var(--green); color: white; font-size: 15px; font-weight: 650; padding: 12px 23px; box-shadow: 0 3px 0 #254a40; }
     .next:hover { background: #2e594d; }
     [hidden] { display: none !important; }
-    .lesson.complete .cat { animation: cat-dance .6s ease-in-out 3; }
+    .lesson.complete .cat, .lesson.complete .emoji { animation: cat-dance .6s ease-in-out 3; }
     .lesson.complete .cat-scene::before { background: #e8efdb; }
     .sparkles { position: absolute; inset: 0; pointer-events: none; opacity: 0; }
     .complete .sparkles { opacity: 1; }
@@ -122,7 +122,7 @@
 </head>
 <body>
 <main>
-  <header class="header"><p class="brand"><span aria-hidden="true">Aa</span>单词小冒险</p><div class="header-meta"><div class="chapter"><span class="chapter-label">键盘小课堂</span> <strong id="chapter">01</strong></div><div class="score" id="score-badge" role="status" aria-live="polite" aria-atomic="true"><span aria-hidden="true">★</span><span>积分 <strong id="score">0</strong></span></div></div></header>
+  <header class="header"><p class="brand"><span aria-hidden="true">Aa</span>单词小冒险</p><div class="header-meta"><div class="chapter"><span class="chapter-label">当前关卡</span> <strong id="chapter">01</strong></div><div class="score" id="score-badge" role="status" aria-live="polite" aria-atomic="true"><span aria-hidden="true">★</span><span>积分 <strong id="score">0</strong></span></div></div></header>
   <section class="lesson" id="lesson" aria-labelledby="task-title">
     <div class="friend">
       <div class="cat-scene">
@@ -158,7 +158,7 @@
         <span class="audio-state" id="audio-state">听一听，也可以直接开始</span>
       </div>
       <p class="feedback" id="feedback" role="status" aria-live="polite">从第一个字母开始，慢慢来。</p>
-      <div class="completion" id="completion" hidden><p id="completion-message">你拼出了 CAT，小猫认识你啦！</p><button class="next" id="next" type="button">再玩一次 ↻</button></div>
+      <div class="completion" id="completion" hidden><p id="completion-message">拼对啦！即将进入下一关。</p><button class="next" id="next" type="button">下一关 →</button></div>
     </div>
   </section>
   <section class="keyboard-area" aria-labelledby="keyboard-title">
@@ -173,21 +173,28 @@
 (() => {
   'use strict';
 
-  // 增加关卡只需向此数组添加数据；distractorCount 按不同字母数计算。
+  // 扩充单词池只需向此数组添加数据；distractorCount 按不同字母数计算。
   // showSpelling: false 时只展示空格；重听仍会读出完整拼写。
-  const LEVELS = [
-    { id: 'cat-01', word: 'CAT', meaning: '猫', illustration: '🐱', distractorCount: 2, showSpelling: true }
+  const WORD_POOL = [
+    { id: 'cat-01', word: 'CAT', meaning: '猫', illustration: '🐱', distractorCount: 2, showSpelling: true },
+    { id: 'dog-01', word: 'DOG', meaning: '狗', illustration: '🐶', distractorCount: 2, showSpelling: true },
+    { id: 'sun-01', word: 'SUN', meaning: '太阳', illustration: '☀️', distractorCount: 2, showSpelling: true },
+    { id: 'hat-01', word: 'HAT', meaning: '帽子', illustration: '🎩', distractorCount: 2, showSpelling: true },
+    { id: 'cup-01', word: 'CUP', meaning: '杯子', illustration: '🥤', distractorCount: 2, showSpelling: true },
+    { id: 'egg-01', word: 'EGG', meaning: '鸡蛋', illustration: '🥚', distractorCount: 2, showSpelling: true }
   ];
+  const NEXT_LEVEL_DELAY = 3200;
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   const rows = ['QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM'];
   const $ = id => document.getElementById(id);
   const synth = window.speechSynthesis;
   const supported = !!synth && typeof window.SpeechSynthesisUtterance === 'function';
   const buttons = new Map(), held = new Set(), flashTimers = new Map();
-  let levelIndex = 0, level, position = 0, complete = false, choices = new Set();
+  let levelNumber = 0, level, position = 0, complete = false, choices = new Set();
+  let nextLevelTimer = null;
   let voices = [], audioRole = null, audioGeneration = 0, audioTimer = null, speechWatchdog = null;
   let activeUtterance = null, hoverTimer = null, needsGesture = false;
-  // 积分在本次打开页面期间累计，切换关卡和重玩均保留。
+  // 积分和关卡编号在本次打开页面期间累计。
   let score = 0, effectsContext = null;
   const effectNotes = new Set();
 
@@ -260,7 +267,22 @@
       throw new Error('关卡需要英文大写单词、中文含义、插图和有效的干扰字母数量。');
     }
   }
-  LEVELS.forEach(validateLevel);
+  if (!WORD_POOL.length) throw new Error('单词池至少需要一个单词。');
+  WORD_POOL.forEach(validateLevel);
+
+  function drawWord() {
+    // 每次从完整单词池等概率抽取，不移除已抽取的词，也允许连续抽到同一个词。
+    return WORD_POOL[Math.floor(Math.random() * WORD_POOL.length)];
+  }
+
+  function scheduleNextLevel() {
+    clearTimeout(nextLevelTimer); nextLevelTimer = null;
+    if (!complete || document.hidden) return;
+    nextLevelTimer = setTimeout(() => {
+      nextLevelTimer = null;
+      if (complete && !document.hidden) startLevel();
+    }, NEXT_LEVEL_DELAY);
+  }
 
   function chooseLetters(config) {
     const required = new Set(config.word);
@@ -416,12 +438,12 @@
       $('task-title').textContent = '太棒啦，你拼出来了！';
       $('feedback').textContent = level.word + '，就是“' + level.meaning + '”！';
       $('friend-caption').textContent = '又认识了一个英文单词！';
-      $('completion-message').textContent = '过关 +1 分！你已经获得 ' + score + ' 分啦。';
+      $('completion-message').textContent = '过关 +1 分！你已经获得 ' + score + ' 分啦。即将进入下一关。';
       $('completion').hidden = false;
-      $('next').textContent = levelIndex < LEVELS.length - 1 ? '下一关 →' : '再玩一次 ↻';
       buttons.forEach(button => { button.disabled = true; });
       const soundDuration = playVictorySound();
       playSequence([{ text: letter, letter: true }, { text: level.word.toLowerCase() }], 'celebration', soundDuration);
+      scheduleNextLevel();
     } else {
       $('feedback').textContent = '找对了 ' + letter + '！继续找第 ' + (position + 1) + ' 个字母吧。';
       playSequence([{ text: letter, letter: true }], 'letter');
@@ -452,23 +474,25 @@
   function clearHeld() {
     held.clear(); clearHover(); buttons.forEach(button => button.classList.remove('pressed'));
   }
-  function startLevel(index) {
+  function startLevel() {
+    clearTimeout(nextLevelTimer); nextLevelTimer = null;
     stopAudio(); stopEffects(); clearHeld();
     flashTimers.forEach(timer => clearTimeout(timer)); flashTimers.clear();
-    levelIndex = index; level = LEVELS[index]; position = 0; complete = false;
+    level = drawWord(); levelNumber++; position = 0; complete = false;
     choices = chooseLetters(level);
     $('lesson').classList.remove('complete'); $('completion').hidden = true;
     $('score-badge').classList.remove('earned');
-    $('chapter').textContent = String(index + 1).padStart(2, '0');
-    $('eyebrow').textContent = '第 ' + (index + 1) + ' 关 · 认识新单词';
+    $('chapter').textContent = String(levelNumber).padStart(2, '0');
+    $('eyebrow').textContent = '第 ' + levelNumber + ' 关 · 认识小单词';
     $('task-title').textContent = '一起拼出“' + level.meaning + '”的英文';
     $('instruction').textContent = level.showSpelling
       ? level.meaning + '的英文是 ' + level.word.toLowerCase() + '。听一听，再按顺序找字母。'
       : '听听“' + level.meaning + '”的英文，再按顺序找字母。';
-    $('friend-caption').textContent = '一位小伙伴，等你来认识';
+    $('friend-caption').textContent = '一个小单词，等你来认识';
     $('cat-art').style.display = level.illustration === '🐱' ? '' : 'none';
     $('emoji-art').hidden = level.illustration === '🐱';
     $('emoji-art').textContent = level.illustration;
+    $('emoji-art').setAttribute('role', 'img');
     $('emoji-art').setAttribute('aria-label', level.meaning);
     $('emoji-art').setAttribute('aria-hidden', 'false');
     $('slots').replaceChildren();
@@ -512,12 +536,20 @@
         !(event.target instanceof Element && event.target.closest('button'))) playPrompt();
   });
   $('listen').addEventListener('click', () => { prepareEffects(); stopEffects(); playPrompt(); });
-  $('next').addEventListener('click', () => startLevel(levelIndex < LEVELS.length - 1 ? levelIndex + 1 : levelIndex));
+  $('next').addEventListener('click', () => { if (complete) startLevel(); });
   window.addEventListener('blur', clearHeld);
-  document.addEventListener('visibilitychange', () => { if (document.hidden) { clearHeld(); stopAudio(); stopEffects(); } });
-  window.addEventListener('pagehide', () => { clearHeld(); stopAudio(); stopEffects(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      clearTimeout(nextLevelTimer); nextLevelTimer = null;
+      clearHeld(); stopAudio(); stopEffects();
+    } else if (complete) scheduleNextLevel();
+  });
+  window.addEventListener('pagehide', () => {
+    clearTimeout(nextLevelTimer); nextLevelTimer = null;
+    clearHeld(); stopAudio(); stopEffects();
+  });
   if (supported) { refreshVoices(); synth.addEventListener('voiceschanged', refreshVoices); }
-  startLevel(0);
+  startLevel();
 })();
 </script>
 </body>
