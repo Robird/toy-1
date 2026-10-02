@@ -220,8 +220,21 @@
   let nextLevelTimer = null;
   let voices = [], audioRole = null, audioGeneration = 0, audioTimer = null, speechWatchdog = null;
   let activeUtterance = null, hoverTimer = null, needsGesture = false;
-  // 积分和关卡编号在本次打开页面期间累计。
-  let score = 0, effectsContext = null;
+  const SCORE_STORAGE_KEY = 'word-adventure-score-v1';
+  function loadSavedScore() {
+    try {
+      const saved = window.localStorage.getItem(SCORE_STORAGE_KEY);
+      if (saved === null) return 0;
+      const value = Number(saved);
+      return Number.isSafeInteger(value) && value >= 0 ? value : 0;
+    } catch (_) { return 0; }
+  }
+  function saveScore() {
+    try { window.localStorage.setItem(SCORE_STORAGE_KEY, String(score)); } catch (_) {}
+  }
+  // 积分跨刷新和重新打开页面保留；关卡编号在本次打开期间累计。
+  let score = loadSavedScore(), effectsContext = null;
+  $('score').textContent = score;
   const effectNotes = new Set();
 
   function prepareEffects() {
@@ -459,6 +472,7 @@
     if (complete) {
       score++;
       $('score').textContent = score;
+      saveScore();
       $('score-badge').classList.add('earned');
       $('lesson').classList.add('complete');
       $('task-title').textContent = '太棒啦，你拼出来了！';
