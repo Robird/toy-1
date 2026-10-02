@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="动动鼠标，按按键盘，一起认识英文字母和数字。">
+  <title>键盘小课堂</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2338685b'/%3E%3Ctext x='16' y='23' text-anchor='middle' font-family='sans-serif' font-size='23' fill='white'%3EA%3C/text%3E%3C/svg%3E">
+  <style>
+    :root{font-family:system-ui,"Microsoft YaHei",sans-serif;color:#263d38;background:#f7f4ec;--green:#38685b;--ink:#263d38}
+    *{box-sizing:border-box}body{margin:0}button{font:inherit;cursor:pointer}button:focus-visible{outline:4px solid #da8a32;outline-offset:4px}
+    main{max-width:1120px;margin:auto;padding:38px 24px 28px}.heading{display:flex;justify-content:space-between;align-items:center;gap:20px}.eyebrow{font-size:13px;letter-spacing:3px;color:#658079;margin:0 0 10px}h1{font-size:clamp(26px,4vw,40px);margin:0;letter-spacing:1px}.intro{color:#66756f;font-size:16px;margin:12px 0 0;line-height:1.8}
+    .display{margin:28px 0 24px;min-height:172px;display:flex;align-items:center;justify-content:center;gap:28px;background:#e9eee5;border-radius:28px;padding:20px}.big-key{font-size:clamp(60px,8vw,86px);line-height:1.1;font-weight:750;color:var(--green);min-width:110px;text-align:center}.key-info{max-width:65%}.key-name{font-size:25px;font-weight:650;margin:0}.key-hint{color:#67776e;font-size:15px;margin:10px 0 0;line-height:1.7}
+    .keyboard-shell{background:#e2dfd4;border:1px solid #d8d6cc;border-radius:26px;padding:26px 24px 22px;box-shadow:0 12px 0 #cbc9bf,0 20px 35px #263d380d}.keyboard-scroll{overflow-x:auto;padding:5px 5px 12px}.keyboard{min-width:620px}.row{display:flex;justify-content:center;gap:9px;margin-bottom:12px}.key{flex:0 0 7.1%;height:72px;border:1px solid #e0ddd2;border-radius:13px;background:#fffdf6;color:#3f504a;box-shadow:0 5px 0 #c7c6bd;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:650;transition:transform .12s,background .12s,box-shadow .12s}.key.number{background:#f7e6bc;color:#806024;box-shadow:0 5px 0 #ccb98c}.key.special{background:#d5e4dd;color:#42695b;font-size:19px}.key.enter{flex-basis:15.1%}.key.space{flex-basis:49%;font-size:19px}.key:hover,.key.active{background:var(--green);color:white;transform:translateY(3px);box-shadow:0 2px 0 #264e42}.key.number:hover,.key.number.active{background:#bd8037;box-shadow:0 2px 0 #8e5d22}.row:last-child{margin-bottom:0}.legend{display:flex;justify-content:space-between;gap:12px;color:#707970;font-size:13px;padding:14px 8px 0}.status{min-height:24px;color:#65746d;text-align:center;line-height:1.7;margin:27px 0 8px;font-size:14px}.foot{text-align:center;color:#8a9086;font-size:12px;margin:0}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+    @media(max-width:650px){main{padding:24px 14px}.heading{align-items:flex-start;flex-direction:column;gap:16px}.display{margin-top:22px;min-height:150px;gap:16px;padding:18px}.big-key{min-width:85px}.key-name{font-size:21px}.keyboard-shell{padding:16px 8px;border-radius:20px}.legend{font-size:12px;flex-wrap:wrap}.intro{font-size:14px}}
+    @media(prefers-reduced-motion:reduce){.key{transition:none}}
+  </style>
+</head>
+<body>
+<main>
+  <header class="heading"><div><p class="eyebrow">听一听 · 按一按 · 认一认</p><h1>键盘小课堂</h1><p class="intro">把鼠标放在按键上，听听它叫什么。<br>也可以点击，或者按一按电脑上的键盘。</p></div></header>
+  <section class="display" aria-label="当前认识的按键"><div class="big-key" id="big-key">A</div><div class="key-info"><p class="key-name" id="key-name">一起认识键盘吧</p><p class="key-hint" id="key-hint">点击或按下任意按键，听听它叫什么。</p></div></section>
+  <section class="keyboard-shell" aria-label="字母数字键盘"><div class="keyboard-scroll"><div class="keyboard" id="keyboard"></div></div><div class="legend"><span>金黄色是数字 · 奶白色是字母</span><span>字母读英文 · 数字读中文</span></div></section>
+  <p class="status" id="status" role="status">声音已开启，点击或按下任意按键试试吧。</p><p class="foot">轻轻按一下就好，长按不会重复朗读。</p>
+</main>
+<script>
+(() => {
+  'use strict';
+  const synth = window.speechSynthesis;
+  const supported = !!synth && typeof window.SpeechSynthesisUtterance === 'function';
+  const status = document.getElementById('status');
+  const digitNames = ['零','一','二','三','四','五','六','七','八','九'];
+  const keys = new Map();
+  const timers = new Map();
+  const held = new Set();
+  const enabled = supported;
+  let voices = [], hoverTimer = null, speechId = 0, utterance = null;
+  const rows = ['1234567890','QWERTYUIOP','ASDFGHJKL','ZXCVBNM'];
+  function meta(key) {
+    if (/^[A-Z]$/.test(key)) return {label:key,text:key,lang:'en-US',kind:'英文字母'};
+    if (/^[0-9]$/.test(key)) return {label:key,text:digitNames[Number(key)],lang:'zh-CN',kind:'数字'};
+    if (key === 'Enter') return {label:'回车',text:'回车',lang:'zh-CN',kind:'回车键'};
+    if (key === 'Space') return {label:'空格',text:'空格',lang:'zh-CN',kind:'空格键'};
+    return null;
+  }
+  function refreshVoices() { if(supported) voices = synth.getVoices(); }
+  function show(key) {
+    const info = meta(key);
+    document.getElementById('big-key').textContent = info.label;
+    document.getElementById('key-name').textContent = info.kind;
+    document.getElementById('key-hint').textContent = enabled ? '再按一下，就能再听一次。' : '试试下一个按键吧。';
+  }
+  function speak(key) {
+    if (!enabled || !supported) return;
+    const info = meta(key);
+    const id = ++speechId;
+    synth.cancel();
+    utterance = new SpeechSynthesisUtterance(info.text);
+    utterance.lang = info.lang;
+    const exact = voices.filter(v => v.lang.toLowerCase() === info.lang.toLowerCase());
+    const sameLanguage = voices.filter(v => v.lang.toLowerCase().startsWith(info.lang.slice(0,2)));
+    const candidates = exact.length ? exact : sameLanguage;
+    const voice = candidates.find(v => v.localService) || candidates[0];
+    if (voice) utterance.voice = voice;
+    utterance.rate = .85;
+    utterance.onstart = () => { if(id === speechId) status.textContent = '正在读：' + info.label; };
+    utterance.onend = () => { if(id === speechId) status.textContent = '试试下一个按键吧。'; };
+    utterance.onerror = event => {
+      if(id !== speechId || event.error === 'canceled' || event.error === 'interrupted') return;
+      if(event.error === 'not-allowed') status.textContent = '先点击或按下任意按键，之后把鼠标放上去也能听到声音。';
+      else status.textContent = event.error === 'language-unavailable' || event.error === 'voice-unavailable' ? '暂时没有合适的声音，请在电脑上添加中文和英文语音。' : '这次没有读出声音，请再按一下试试。';
+    };
+    synth.speak(utterance);
+  }
+  function activate(key, shouldSpeak = true) {
+    const button = keys.get(key);
+    if (!button) return;
+    show(key);
+    clearTimeout(timers.get(key));
+    button.classList.add('active');
+    timers.set(key, setTimeout(() => { if(!held.has(key)) button.classList.remove('active'); timers.delete(key); }, 240));
+    if(shouldSpeak) speak(key);
+  }
+  function cancelHover() { clearTimeout(hoverTimer); hoverTimer = null; }
+  function addKey(row,key) {
+    const info = meta(key);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'key' + (/^\d$/.test(key) ? ' number' : '') + (key === 'Enter' ? ' special enter' : '') + (key === 'Space' ? ' special space' : '');
+    button.textContent = info.label;
+    button.setAttribute('aria-label', /^[A-Z]$/.test(key) ? '字母 ' + key : info.text + '键');
+    button.dataset.key = key;
+    button.addEventListener('pointerenter', event => {
+      if(event.pointerType === 'touch') return;
+      cancelHover();
+      show(key);
+      hoverTimer = setTimeout(() => { hoverTimer = null; activate(key); }, 160);
+    });
+    button.addEventListener('pointerleave', cancelHover);
+    button.addEventListener('click', () => {
+      cancelHover();
+      activate(key);
+    });
+    keys.set(key, button);
+    row.appendChild(button);
+  }
+  rows.forEach((letters,index) => {
+    const row = document.createElement('div'); row.className = 'row';
+    for(const letter of letters) addKey(row,letter);
+    if(index === 2) addKey(row,'Enter');
+    document.getElementById('keyboard').appendChild(row);
+  });
+  const spaceRow = document.createElement('div'); spaceRow.className = 'row'; addKey(spaceRow,'Space'); document.getElementById('keyboard').appendChild(spaceRow);
+  function eventKey(event) {
+    if(event.key === 'Enter') return 'Enter';
+    if(event.key === ' ') return 'Space';
+    if(/^Key[A-Z]$/.test(event.code)) return event.code.slice(3);
+    if(/^Digit[0-9]$/.test(event.code)) return event.code.slice(5);
+    if(/^Numpad[0-9]$/.test(event.code) && /^[0-9]$/.test(event.key)) return event.code.slice(6);
+    if(/^[a-zA-Z0-9]$/.test(event.key)) return event.key.toUpperCase();
+    return null;
+  }
+  document.addEventListener('keydown', event => {
+    if(event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
+    const target = event.target;
+    if(target instanceof Element && target.closest('input,textarea,select,[contenteditable="true"]')) return;
+    const key = eventKey(event);
+    if(!key || !keys.has(key)) return;
+    event.preventDefault();
+    if(event.repeat || held.has(key)) return;
+    cancelHover(); held.add(key);
+    activate(key);
+  });
+  document.addEventListener('keyup', event => {
+    const key = eventKey(event);
+    if(!key) return;
+    held.delete(key); keys.get(key)?.classList.remove('active');
+  });
+  function clearHeld() { held.clear(); keys.forEach(button => button.classList.remove('active')); cancelHover(); }
+  window.addEventListener('blur', clearHeld);
+  document.addEventListener('visibilitychange', () => { if(document.hidden) { clearHeld(); if(supported) { speechId++; synth.cancel(); } } });
+  if(supported) { refreshVoices(); synth.addEventListener('voiceschanged', refreshVoices); }
+  else { status.textContent = '这个浏览器暂不支持朗读。请换用支持语音合成的浏览器，或先试试按键。'; document.getElementById('key-hint').textContent = '点击或按下任意按键，看看它叫什么。'; }
+  const context = document.modelContext;
+  if(context?.registerTool) {
+    const lifecycle = new AbortController();
+    try {
+      Promise.resolve(context.registerTool({
+        name:'select_keyboard_key', title:'选择练习按键', description:'选择字母、数字、空格或回车，更新键盘练习中的高亮和展示，并尝试朗读。',
+        inputSchema:{type:'object',properties:{key:{type:'string',enum:[...keys.keys()]}},required:['key'],additionalProperties:false},
+        annotations:{readOnlyHint:false,untrustedContentHint:false},
+        execute(input) { if(!input || typeof input !== 'object' || !keys.has(input.key) || Object.keys(input).some(k => k !== 'key')) throw new Error('请选择一个有效按键。'); activate(input.key); return {selectedKey:input.key,soundEnabled:enabled}; }
+      },{signal:lifecycle.signal})).catch(() => {});
+    } catch(_) {}
+    window.addEventListener('pagehide', () => lifecycle.abort(), {once:true});
+  }
+})();
+</script>
+</body>
+</html>

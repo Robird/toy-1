@@ -21,6 +21,21 @@ const entityTiers = [
   { radius: 116, value: 80, count: 5, color: "#ffffff" }
 ];
 
+function getScaleForMass(mass) {
+  return Math.pow(Math.max(1, mass), -0.22);
+}
+
+function lerp(start, end, t) {
+  return start + (end - start) * t;
+}
+
+function easeInOutCubic(t) {
+  if (t < 0.5) {
+    return 4 * t * t * t;
+  }
+  return 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
 const state = {
   width: 0,
   height: 0,
@@ -28,13 +43,22 @@ const state = {
   playerWorldRadius: 24,
   playerScreenRadius: 30,
   playerMass: 1,
-  worldScale: 1,
+  displayMass: 1,
+  worldScale: getScaleForMass(1),
   worldX: 0,
   worldY: 0,
   velocityX: 0,
   velocityY: 0,
   pulse: 0,
   stageIndex: 0,
+  upgrade: {
+    active: false,
+    elapsed: 0,
+    duration: 2.4,
+    fromMass: 1,
+    toMass: 1,
+    toStageIndex: 0
+  },
   entities: [],
   stars: [],
   pointer: { active: false, x: 0, y: 0 },
@@ -66,28 +90,100 @@ function buildStarfield() {
 
 function resetGame() {
   state.playerMass = 1;
+  state.displayMass = 1;
   state.playerWorldRadius = 24;
-  state.worldScale = 1;
+  state.worldScale = getScaleForMass(state.displayMass);
   state.worldX = 0;
   state.worldY = 0;
   state.velocityX = 0;
   state.velocityY = 0;
   state.pulse = 0;
+  state.stageIndex = 0;
+  state.upgrade.active = false;
+  state.upgrade.elapsed = 0;
+  state.upgrade.fromMass = 1;
+  state.upgrade.toMass = 1;
+  state.upgrade.toStageIndex = 0;
   state.entities = [];
-  updateStage();
+  updateHud();
   refillEntities(true);
 }
 
-function updateStage() {
-  let index = 0;
-  for (let i = 0; i < stageDefs.length; i += 1) {
-    if (state.playerMass >= stageDefs[i].threshold) {
-      index = i;
-    }
+function getStageProgress() {
+  const currentThreshold = stageDefs[state.stageIndex].threshold;
+  const nextStage = stageDefs[state.stageIndex + 1];
+
+  if (!nextStage) {
+    return {
+      current: Math.max(0, Math.floor(state.playerMass - currentThreshold)),
+      needed: 0,
+      label: "MAX",
+      isMax: true
+    };
   }
-  state.stageIndex = index;
-  stageLabel.textContent = stageDefs[index].name;
+
+  const needed = nextStage.threshold - currentThreshold;
+  const current = Math.min(needed, Math.max(0, Math.floor(state.playerMass - currentThreshold)));
+
+  return {
+    current,
+    needed,
+    label: `${current}/${needed}`,
+    isMax: false
+  };
+}
+
+function updateHud() {
+  if (state.upgrade.active) {
+    stageLabel.textContent = `${stageDefs[state.upgrade.toStageIndex].name} 成形中`;
+  } else {
+    stageLabel.textContent = stageDefs[state.stageIndex].name;
+  }
   massLabel.textContent = `质量 ${Math.floor(state.playerMass)}`;
+}
+
+function queueUpgradeIfReady() {
+  if (state.upgrade.active) {
+    return;
+  }
+
+  const nextStageIndex = state.stageIndex + 1;
+  if (nextStageIndex >= stageDefs.length) {
+    return;
+  }
+
+  if (state.playerMass >= stageDefs[nextStageIndex].threshold) {
+    state.upgrade.active = true;
+    state.upgrade.elapsed = 0;
+    state.upgrade.fromMass = state.displayMass;
+    state.upgrade.toMass = stageDefs[nextStageIndex].threshold;
+    state.upgrade.toStageIndex = nextStageIndex;
+    state.pulse = Math.max(state.pulse, 1.2);
+    updateHud();
+  }
+}
+
+function updateUpgrade(dt) {
+  if (!state.upgrade.active) {
+    return;
+  }
+
+  state.upgrade.elapsed += dt;
+  const t = Math.min(1, state.upgrade.elapsed / state.upgrade.duration);
+  const eased = easeInOutCubic(t);
+
+  state.displayMass = lerp(state.upgrade.fromMass, state.upgrade.toMass, eased);
+  state.worldScale = getScaleForMass(state.displayMass);
+
+  if (t >= 1) {
+    state.upgrade.active = false;
+    state.stageIndex = state.upgrade.toStageIndex;
+    state.displayMass = stageDefs[state.stageIndex].threshold;
+    state.worldScale = getScaleForMass(state.displayMass);
+    state.pulse = Math.max(state.pulse, 1.35);
+    updateHud();
+    queueUpgradeIfReady();
+  }
 }
 
 function getViewRadiusWorld() {
@@ -157,7 +253,7 @@ function handleInput(dt) {
     intentY /= magnitude;
   }
 
-  const speed = 240 / Math.max(0.55, Math.pow(state.playerMass, 0.12));
+  const speed = 240 / Math.max(0.55, Math.pow(state.displayMass, 0.12));
   const targetVelocityX = intentX * speed;
   const targetVelocityY = intentY * speed;
   const smoothing = 1 - Math.exp(-dt * 8);
@@ -170,9 +266,9 @@ function handleInput(dt) {
 
 function absorbEntity(entity) {
   state.playerMass += entity.massValue;
-  state.pulse = 1;
-  state.worldScale = Math.pow(state.playerMass, -0.22);
-  updateStage();
+  state.pulse = Math.min(1.2, state.pulse + 0.18);
+  updateHud();
+  queueUpgradeIfReady();
 }
 
 function updateEntities(dt) {
@@ -218,6 +314,7 @@ function updateEntities(dt) {
 function update(dt) {
   handleInput(dt);
   updateEntities(dt);
+  updateUpgrade(dt);
   state.pulse = Math.max(0, state.pulse - dt * 2.2);
 }
 
@@ -322,6 +419,15 @@ function drawPlayer() {
   context.arc(x, y, radius, 0, Math.PI * 2);
   context.fill();
 
+  if (state.upgrade.active) {
+    const upgradeT = Math.min(1, state.upgrade.elapsed / state.upgrade.duration);
+    context.strokeStyle = `rgba(255, 241, 180, ${0.42 - upgradeT * 0.2})`;
+    context.lineWidth = 3;
+    context.beginPath();
+    context.arc(x, y, radius * (1.75 + upgradeT * 0.55), 0, Math.PI * 2);
+    context.stroke();
+  }
+
   if (state.stageIndex >= 3) {
     context.strokeStyle = "rgba(126, 150, 255, 0.92)";
     context.lineWidth = 4;
@@ -335,6 +441,28 @@ function drawPlayer() {
   context.arc(x - radius * 0.28, y - radius * 0.12, radius * 0.16, 0, Math.PI * 2);
   context.arc(x + radius * 0.22, y - radius * 0.18, radius * 0.12, 0, Math.PI * 2);
   context.fill();
+
+  const progress = getStageProgress();
+  const progressY = y + radius * 0.42;
+  const progressFontSize = Math.max(11, radius * 0.38);
+  context.font = `700 ${progressFontSize}px "Trebuchet MS", "Segoe UI", sans-serif`;
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  const progressWidth = context.measureText(progress.label).width + radius * 0.76;
+  const progressHeight = Math.max(18, radius * 0.62);
+  context.fillStyle = progress.isMax ? "rgba(64, 76, 132, 0.72)" : "rgba(7, 14, 32, 0.6)";
+  context.beginPath();
+  context.ellipse(x, progressY, progressWidth * 0.5, progressHeight * 0.5, 0, 0, Math.PI * 2);
+  context.fill();
+
+  context.fillStyle = "rgba(248, 251, 255, 0.96)";
+  context.fillText(progress.label, x, progressY + 1);
+
+  if (state.upgrade.active) {
+    context.font = `700 ${Math.max(10, radius * 0.28)}px "Trebuchet MS", "Segoe UI", sans-serif`;
+    context.fillStyle = "rgba(255, 241, 180, 0.98)";
+    context.fillText("升级中", x, y - radius * 1.18);
+  }
 }
 
 function drawReachRing() {
