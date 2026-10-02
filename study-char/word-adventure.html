@@ -71,10 +71,6 @@
     .keyboard-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin: 0 5px 14px; }
     .keyboard-heading h2 { margin: 0; font-size: 15px; font-weight: 650; }
     .keyboard-heading p { margin: 0; color: #8a8f80; font-size: 12px; }
-    .case-switch { display: inline-flex; gap: 3px; padding: 3px; border: 1px solid #d9e2d4; border-radius: 12px; background: #edf2e7; color: var(--green); }
-    .case-switch span { padding: 6px 10px; border-radius: 8px; font-size: 12px; font-weight: 650; transition: background .2s, color .2s; }
-    .case-switch[aria-checked="false"] .case-upper, .case-switch[aria-checked="true"] .case-lower { background: var(--green); color: #fffdf7; }
-    .case-switch:hover { border-color: #799b77; }
     .keyboard-shell { padding: 21px 25px 24px; border: 1px solid #dedccd; border-radius: 25px; background: #e8e6da; box-shadow: 0 7px 0 #d4d2c5; }
     .row { display: flex; justify-content: center; gap: 9px; margin-bottom: 11px; }
     .row:last-child { margin-bottom: 0; }
@@ -83,6 +79,10 @@
     .key:disabled { background: #e3e2d7; color: #b0b3a5; border-color: #dbdccf; box-shadow: 0 2px 0 #d1d1c3; }
     .key.correct { background: var(--green); color: white; box-shadow: 0 2px 0 #254a40; }
     .key.try-again { background: #f4dfb8; border-color: #ddb36b; animation: nudge .3s ease; }
+    .key.shift-key { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; flex-shrink: 0; width: 15%; max-width: 120px; padding: 4px; font-size: 14px; }
+    .key.shift-key:hover { background: #eef2dc; }
+    .key.shift-key[aria-pressed="true"] { background: var(--green); color: #fffdf7; border-color: #254a40; transform: translateY(3px); box-shadow: 0 1px 0 #254a40, inset 0 2px 5px #173e3440; }
+    .shift-state { font-size: 11px; font-weight: 500; opacity: .85; }
     .keyboard-note { display: flex; justify-content: space-between; gap: 12px; margin: 19px 5px 0; color: #8a9081; font-size: 12px; line-height: 1.7; }
     .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #d9b56c; margin-right: 7px; }
     .audio-notice { min-height: 21px; text-align: center; color: #8b806a; font-size: 12px; line-height: 1.7; margin: 19px 0 0; }
@@ -140,6 +140,8 @@
       .keyboard-shell { padding: 15px 8px 20px; }
       .row { gap: 4px; }
       .key { width: 9.5%; height: 48px; font-size: 20px; border-radius: 8px; }
+      .key.shift-key { width: 16%; font-size: 11px; }
+      .shift-state { font-size: 10px; }
       .keyboard-note { flex-direction: column; gap: 3px; }
       .audio-notice { margin-top: 12px; }
     }
@@ -200,10 +202,9 @@
   <section class="keyboard-area" aria-labelledby="keyboard-title">
     <div class="keyboard-heading">
       <h2 id="keyboard-title">找找亮着的字母</h2>
-      <button class="case-switch" id="letter-case" type="button" role="switch" aria-checked="false" aria-label="使用小写字母" aria-controls="slots keyboard" title="切换字母大小写"><span class="case-upper" aria-hidden="true">大写 ABC</span><span class="case-lower" aria-hidden="true">小写 abc</span></button>
       <p>点击屏幕 · 或敲电脑键盘</p>
     </div>
-    <div class="keyboard-shell" id="keyboard"></div>
+    <div class="keyboard-shell" id="keyboard"><button class="key shift-key" id="letter-case" type="button" aria-pressed="true" aria-label="使用大写字母" aria-controls="slots keyboard" title="点击锁定大写，再点一次切回小写"><span aria-hidden="true">⇧ Shift</span><span class="shift-state" id="shift-state" aria-hidden="true">大写</span></button></div>
     <div class="keyboard-note"><span><span class="dot" aria-hidden="true"></span>亮着的字母都可以试一试，按错也没关系。</span><span>轻轻按一下，长按不会重复输入。</span></div>
   </section>
   <p class="audio-notice" id="audio-notice" role="status"></p>
@@ -930,7 +931,8 @@
   }
 
   function renderLetterCase() {
-    $('letter-case').setAttribute('aria-checked', String(lowercaseLetters));
+    $('letter-case').setAttribute('aria-pressed', String(!lowercaseLetters));
+    $('shift-state').textContent = lowercaseLetters ? '小写' : '大写';
     buttons.forEach((button, letter) => {
       button.textContent = displayLetters(letter);
       button.setAttribute('aria-label', '字母 ' + displayLetters(letter));
@@ -1015,6 +1017,7 @@
 
   for (const letters of rows) {
     const row = document.createElement('div'); row.className = 'row';
+    if (letters === rows[2]) row.appendChild($('letter-case'));
     for (const letter of letters) {
       const button = document.createElement('button');
       button.type = 'button'; button.className = 'key'; button.textContent = letter;
