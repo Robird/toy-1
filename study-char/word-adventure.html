@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="听单词、找字母，帮小猫拼出它的英文名字。">
+  <title>单词小冒险 · 键盘小课堂</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%2338685b'/%3E%3Ctext x='16' y='24' text-anchor='middle' font-size='24'%3E🐱%3C/text%3E%3C/svg%3E">
+  <style>
+    :root { font-family: system-ui, "Microsoft YaHei", sans-serif; color: #29463d; background: #f8f5ed; --green: #38685b; --muted: #748177; --gold: #e7aa50; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: radial-gradient(ellipse at 12% 14%, #f0eadb 0, transparent 40%), #f8f5ed; }
+    button { font: inherit; cursor: pointer; touch-action: manipulation; }
+    button:focus-visible { outline: 3px solid #ba7525; outline-offset: 5px; }
+    button:disabled { cursor: default; }
+    main { max-width: 1080px; margin: auto; padding: 28px 28px 24px; }
+    .header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 23px; }
+    .brand { margin: 0; font-weight: 750; font-size: 19px; letter-spacing: 1px; }
+    .brand span { display: inline-grid; place-items: center; width: 34px; height: 34px; margin-right: 10px; border-radius: 11px; background: var(--green); color: #fffaf0; }
+    .chapter { color: #707d72; font-size: 13px; }
+    .chapter strong { color: var(--green); font-size: 17px; margin-left: 6px; }
+    .lesson { position: relative; overflow: hidden; display: grid; grid-template-columns: 260px 1fr; gap: 36px; padding: 31px 42px 32px; background: #fffdf7; border: 1px solid #e6e3d6; border-radius: 30px; box-shadow: 0 8px 32px #4b604b06; }
+    .friend { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .cat-scene { width: 234px; height: 216px; position: relative; display: grid; place-items: center; }
+    .cat-scene::before { content: ''; width: 190px; height: 190px; border-radius: 50%; background: #f6edda; position: absolute; }
+    .cat { width: 218px; height: 202px; position: relative; overflow: visible; transform-origin: 50% 90%; }
+    .emoji { font-size: 112px; position: relative; line-height: 1.5; }
+    .friend-caption { margin: 4px 0 0; color: #8d795b; font-size: 13px; }
+    .task { align-self: center; }
+    .eyebrow { color: #8a806b; font-size: 12px; letter-spacing: 3px; margin: 0 0 10px; }
+    h1 { font-size: clamp(24px, 3.5vw, 34px); margin: 0; letter-spacing: 1px; }
+    .instruction { margin: 10px 0 21px; font-size: 15px; color: #788176; line-height: 1.7; }
+    .slots { display: flex; flex-wrap: wrap; gap: 11px; }
+    .slot { width: 72px; height: 80px; display: grid; place-items: center; border-radius: 16px; border: 2px solid #e8e7dc; background: #f6f5ed; color: #a9b1a3; font-size: 39px; font-weight: 750; position: relative; transition: background .2s, border-color .2s, color .2s; }
+    .slot.current { border-color: #799b77; box-shadow: 0 0 0 4px #dfe9d657; }
+    .slot.current::after { content: ''; width: 20px; height: 3px; position: absolute; bottom: 10px; border-radius: 2px; background: #6a8a63; }
+    .slot.filled { color: #fffdf7; background: var(--green); border-color: var(--green); animation: pop .23s ease-out; }
+    .slot.listening { box-shadow: 0 0 0 4px #e7aa5040; border-color: #d6a55e; }
+    .progress { margin: 13px 0 0; font-size: 12px; color: #8b9284; }
+    .actions { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin-top: 21px; }
+    .listen { border: 1px solid #d9e2d4; background: #edf2e7; color: var(--green); padding: 11px 17px; border-radius: 13px; font-size: 14px; font-weight: 650; }
+    .listen:hover { background: #e1ead8; }
+    .listen svg { width: 17px; height: 17px; vertical-align: -3px; margin-right: 7px; }
+    .audio-state { color: #8b8874; font-size: 12px; min-height: 19px; }
+    .feedback { min-height: 29px; margin: 20px 0 0; line-height: 1.8; font-size: 15px; font-weight: 550; color: #57715a; }
+    .keyboard-area { margin-top: 25px; }
+    .keyboard-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 5px 14px; }
+    .keyboard-heading h2 { margin: 0; font-size: 15px; font-weight: 650; }
+    .keyboard-heading p { margin: 0; color: #8a8f80; font-size: 12px; }
+    .keyboard-shell { padding: 21px 25px 24px; border: 1px solid #dedccd; border-radius: 25px; background: #e8e6da; box-shadow: 0 7px 0 #d4d2c5; }
+    .row { display: flex; justify-content: center; gap: 9px; margin-bottom: 11px; }
+    .row:last-child { margin-bottom: 0; }
+    .key { width: 8.9%; max-width: 77px; height: 65px; border: 1px solid #e2ddcd; border-radius: 12px; background: #fffdf5; color: #3c5d4c; box-shadow: 0 4px 0 #c4c3b4; font-size: 26px; font-weight: 700; transition: transform .12s, background .12s; }
+    .key.available:hover, .key.pressed { background: #eef2dc; transform: translateY(2px); box-shadow: 0 2px 0 #b7baa5; }
+    .key:disabled { background: #e3e2d7; color: #b0b3a5; border-color: #dbdccf; box-shadow: 0 2px 0 #d1d1c3; }
+    .key.correct { background: var(--green); color: white; box-shadow: 0 2px 0 #254a40; }
+    .key.try-again { background: #f4dfb8; border-color: #ddb36b; animation: nudge .3s ease; }
+    .keyboard-note { display: flex; justify-content: space-between; gap: 12px; margin: 19px 5px 0; color: #8a9081; font-size: 12px; line-height: 1.7; }
+    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #d9b56c; margin-right: 7px; }
+    .audio-notice { min-height: 21px; text-align: center; color: #8b806a; font-size: 12px; line-height: 1.7; margin: 19px 0 0; }
+    .completion { margin-top: 17px; }
+    .completion p { margin: 0 0 13px; color: #697b60; font-size: 14px; }
+    .next { border: 0; border-radius: 13px; background: var(--green); color: white; font-size: 15px; font-weight: 650; padding: 12px 23px; box-shadow: 0 3px 0 #254a40; }
+    .next:hover { background: #2e594d; }
+    [hidden] { display: none !important; }
+    .lesson.complete .cat { animation: cat-dance .6s ease-in-out 3; }
+    .lesson.complete .cat-scene::before { background: #e8efdb; }
+    .sparkles { position: absolute; inset: 0; pointer-events: none; opacity: 0; }
+    .complete .sparkles { opacity: 1; }
+    .sparkles span { position: absolute; color: #dca54d; font-size: 23px; animation: twinkle 1.2s ease-in-out 3; }
+    .sparkles span:nth-child(1) { left: 4%; top: 20%; }
+    .sparkles span:nth-child(2) { right: 2%; top: 11%; animation-delay: .2s; }
+    .sparkles span:nth-child(3) { right: 3%; bottom: 20%; animation-delay: .4s; }
+    @keyframes pop { 50% { transform: scale(1.08); } }
+    @keyframes nudge { 30% { transform: translateX(-3px); } 65% { transform: translateX(3px); } }
+    @keyframes cat-dance { 25% { transform: translateY(-9px) rotate(-5deg); } 75% { transform: translateY(-9px) rotate(5deg); } }
+    @keyframes twinkle { 50% { transform: scale(1.25) rotate(15deg); } }
+    @media (max-width: 740px) {
+      main { padding: 20px 16px; }
+      .lesson { grid-template-columns: 180px 1fr; gap: 16px; padding: 26px 23px; }
+      .cat-scene { width: 175px; height: 177px; }
+      .cat-scene::before { width: 155px; height: 155px; }
+      .cat { width: 180px; }
+      .slot { width: 58px; height: 66px; font-size: 32px; }
+      .keyboard-shell { padding: 18px 12px 22px; }
+      .row { gap: 6px; }
+      .key { height: 57px; font-size: 23px; }
+    }
+    @media (max-width: 520px) {
+      .brand { font-size: 16px; }
+      .chapter { font-size: 11px; }
+      .lesson { grid-template-columns: 1fr; gap: 13px; padding: 19px 22px 23px; }
+      .cat-scene { height: 136px; }
+      .cat-scene::before { width: 126px; height: 126px; }
+      .cat { width: 150px; height: 140px; }
+      .friend-caption { margin-top: 0; }
+      .task { text-align: center; }
+      .eyebrow { margin-bottom: 7px; }
+      h1 { font-size: 25px; }
+      .instruction { margin: 7px 0 15px; font-size: 13px; }
+      .slots, .actions { justify-content: center; }
+      .actions { margin-top: 16px; gap: 10px; }
+      .feedback { margin-top: 14px; font-size: 13px; }
+      .keyboard-heading p { font-size: 11px; }
+      .keyboard-shell { padding: 15px 8px 20px; }
+      .row { gap: 4px; }
+      .key { width: 9.5%; height: 48px; font-size: 20px; border-radius: 8px; }
+      .keyboard-note { flex-direction: column; gap: 3px; }
+      .audio-notice { margin-top: 12px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header class="header"><p class="brand"><span aria-hidden="true">Aa</span>单词小冒险</p><div class="chapter">键盘小课堂 <strong id="chapter">01</strong></div></header>
+  <section class="lesson" id="lesson" aria-labelledby="task-title">
+    <div class="friend">
+      <div class="cat-scene">
+        <svg class="cat" id="cat-art" viewBox="0 0 240 220" role="img" aria-label="一只等你帮忙拼单词的小猫">
+          <ellipse cx="122" cy="198" rx="67" ry="9" fill="#dbcfb7" opacity=".6"/>
+          <path d="M165 172 Q210 180 199 141 Q193 124 205 115" fill="none" stroke="#d6a566" stroke-width="17" stroke-linecap="round"/>
+          <path d="M81 132 Q62 163 74 191 Q93 206 167 190 Q177 155 154 131" fill="#e5b777"/>
+          <ellipse cx="119" cy="168" rx="28" ry="30" fill="#f6dfb8"/>
+          <path d="M77 93 L67 35 Q66 29 74 32 L108 56 M138 56 L173 32 Q181 29 180 38 L169 99" fill="#e5b777" stroke="#bf8b53" stroke-width="3" stroke-linejoin="round"/>
+          <path d="M77 68 L75 44 L96 59 M151 60 L171 44 L168 72" fill="#dd9b87"/>
+          <path d="M72 88 Q75 52 123 53 Q169 54 178 88 Q187 145 126 151 Q67 148 72 88" fill="#edc58d" stroke="#bf8b53" stroke-width="2.5"/>
+          <path d="M109 55 L115 76 M123 54 L124 74 M137 56 L132 77" stroke="#cc995c" stroke-width="6" stroke-linecap="round"/>
+          <ellipse cx="100" cy="105" rx="5" ry="7" fill="#4b493a"/><ellipse cx="149" cy="105" rx="5" ry="7" fill="#4b493a"/>
+          <ellipse cx="88" cy="118" rx="10" ry="5" fill="#dfab8d"/><ellipse cx="162" cy="118" rx="10" ry="5" fill="#dfab8d"/>
+          <path d="M119 116 Q124 111 130 116 L125 122 Z" fill="#bc8276"/>
+          <path d="M125 122 Q117 133 112 125 M125 122 Q132 133 138 125" stroke="#795e49" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          <path d="M61 107 L84 111 M59 120 L83 119 M165 111 L189 106 M166 119 L191 122" stroke="#9f805f" stroke-width="2" stroke-linecap="round"/>
+          <path d="M83 181 Q88 191 105 189 M134 189 Q151 193 157 183" fill="none" stroke="#bf8b53" stroke-width="3" stroke-linecap="round"/>
+        </svg>
+        <span class="emoji" id="emoji-art" hidden aria-hidden="true"></span>
+        <div class="sparkles" aria-hidden="true"><span>✦</span><span>✧</span><span>✦</span></div>
+      </div>
+      <p class="friend-caption" id="friend-caption">一位小伙伴，等你来认识</p>
+    </div>
+    <div class="task">
+      <p class="eyebrow" id="eyebrow">第 1 关 · 认识小动物</p>
+      <h1 id="task-title">帮小猫拼出它的名字</h1>
+      <p class="instruction" id="instruction">猫的英文是 cat。听一听，再按顺序找字母。</p>
+      <div class="slots" id="slots" role="group" aria-label="单词拼写进度"></div>
+      <p class="progress" id="progress">已找到 0 / 3 个字母</p>
+      <div class="actions">
+        <button class="listen" id="listen" type="button" aria-label="再听一次目标单词和字母拼写"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M11 4 5 9H2v6h3l6 5Z"/><path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></svg>再听一次</button>
+        <span class="audio-state" id="audio-state">听一听，也可以直接开始</span>
+      </div>
+      <p class="feedback" id="feedback" role="status" aria-live="polite">从第一个字母开始，慢慢来。</p>
+      <div class="completion" id="completion" hidden><p id="completion-message">你拼出了 CAT，小猫认识你啦！</p><button class="next" id="next" type="button">再玩一次 ↻</button></div>
+    </div>
+  </section>
+  <section class="keyboard-area" aria-labelledby="keyboard-title">
+    <div class="keyboard-heading"><h2 id="keyboard-title">找找亮着的字母</h2><p>点击屏幕 · 或敲电脑键盘</p></div>
+    <div class="keyboard-shell" id="keyboard"></div>
+    <div class="keyboard-note"><span><span class="dot" aria-hidden="true"></span>亮着的字母都可以试一试，按错也没关系。</span><span>轻轻按一下，长按不会重复输入。</span></div>
+  </section>
+  <p class="audio-notice" id="audio-notice" role="status"></p>
+  <noscript><p>请启用 JavaScript，开始单词小冒险。</p></noscript>
+</main>
+<script>
+(() => {
+  'use strict';
+
+  // 增加关卡只需向此数组添加数据；distractorCount 按不同字母数计算。
+  // showSpelling: false 时只展示空格；重听仍会读出完整拼写。
+  const LEVELS = [
+    { id: 'cat-01', word: 'CAT', meaning: '猫', illustration: '🐱', distractorCount: 2, showSpelling: true }
+  ];
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const rows = ['QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM'];
+  const $ = id => document.getElementById(id);
+  const synth = window.speechSynthesis;
+  const supported = !!synth && typeof window.SpeechSynthesisUtterance === 'function';
+  const buttons = new Map(), held = new Set(), flashTimers = new Map();
+  let levelIndex = 0, level, position = 0, complete = false, choices = new Set();
+  let voices = [], audioRole = null, audioGeneration = 0, audioTimer = null, speechWatchdog = null;
+  let activeUtterance = null, hoverTimer = null, needsGesture = false;
+
+  function validateLevel(config) {
+    if (!config || typeof config.id !== 'string' || !/^[A-Z]+$/.test(config.word) ||
+        typeof config.meaning !== 'string' || typeof config.illustration !== 'string' ||
+        typeof config.showSpelling !== 'boolean' || !Number.isInteger(config.distractorCount) ||
+        config.distractorCount < 0 || config.distractorCount > 26 - new Set(config.word).size) {
+      throw new Error('关卡需要英文大写单词、中文含义、插图和有效的干扰字母数量。');
+    }
+  }
+  LEVELS.forEach(validateLevel);
+
+  function chooseLetters(config) {
+    const required = new Set(config.word);
+    const pool = [...alphabet].filter(letter => !required.has(letter));
+    // 按关卡 ID 固定干扰字母，重听、重玩都不会改变键盘。
+    let seed = 2166136261;
+    for (const char of config.id) seed = Math.imul(seed ^ char.charCodeAt(0), 16777619) >>> 0;
+    for (let i = pool.length - 1; i > 0; i--) {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      const j = seed % (i + 1);
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    return new Set([...required, ...pool.slice(0, config.distractorCount)]);
+  }
+
+  function refreshVoices() { if (supported) voices = synth.getVoices(); }
+  function clearHover() { clearTimeout(hoverTimer); hoverTimer = null; }
+  function clearListening() { for (const slot of $('slots').children) slot.classList.remove('listening'); }
+  function stopAudio() {
+    audioGeneration++;
+    clearTimeout(audioTimer); clearTimeout(speechWatchdog);
+    audioTimer = null; speechWatchdog = null; activeUtterance = null; audioRole = null;
+    clearListening();
+    if (supported) synth.cancel();
+    $('listen').removeAttribute('aria-busy');
+    $('audio-state').textContent = complete ? '你已经拼出整个单词啦' : '随时可以按字母，不用等提示';
+  }
+
+  // 语音独立于输入进度。只有当前播放批次可以更新界面，取消后的回调不会干扰新输入。
+  function playSequence(steps, role) {
+    stopAudio();
+    if (!supported || document.hidden) return;
+    clearHover(); refreshVoices();
+    const generation = audioGeneration;
+    audioRole = role;
+    if (role === 'prompt') $('listen').setAttribute('aria-busy', 'true');
+    function finish() {
+      if (generation !== audioGeneration) return;
+      clearTimeout(speechWatchdog); clearTimeout(audioTimer);
+      activeUtterance = null; audioRole = null; clearListening();
+      $('listen').removeAttribute('aria-busy');
+      $('audio-state').textContent = complete ? '你已经拼出整个单词啦' : '轮到你啦，找找下一个字母';
+    }
+    function fail(error) {
+      if (generation !== audioGeneration) return;
+      stopAudio();
+      if (error === 'not-allowed') {
+        needsGesture = true;
+        $('audio-notice').textContent = '直接点击或按下一个字母，声音就会自动开始。';
+      } else if (error === 'language-unavailable' || error === 'voice-unavailable') {
+        $('audio-notice').textContent = '暂时没有英文声音，可以先看着字母拼写。请在电脑上添加英文语音。';
+      } else {
+        $('audio-notice').textContent = '这次没听清？可以点“再听一次”，拼好的字母会保留。';
+      }
+    }
+    function run(index) {
+      if (generation !== audioGeneration) return;
+      if (index >= steps.length) { finish(); return; }
+      const step = steps[index];
+      const speech = new SpeechSynthesisUtterance(step.text);
+      activeUtterance = speech;
+      speech.lang = 'en-US'; speech.rate = step.letter ? .78 : .72;
+      const english = voices.filter(voice => /^en(?:-|$)/i.test(voice.lang));
+      speech.voice = english.find(voice => /^en-US$/i.test(voice.lang) && voice.localService) ||
+        english.find(voice => voice.localService) || english[0] || null;
+      let settled = false;
+      speech.onstart = () => {
+        if (generation !== audioGeneration) return;
+        needsGesture = false; $('audio-notice').textContent = '';
+        clearListening();
+        if (role === 'prompt' && Number.isInteger(step.slot)) $('slots').children[step.slot]?.classList.add('listening');
+        $('audio-state').textContent = (role === 'prompt' ? '听一听 · ' : '正在读 · ') + step.text;
+      };
+      speech.onend = () => {
+        if (generation !== audioGeneration || settled) return;
+        settled = true; clearTimeout(speechWatchdog); clearListening();
+        audioTimer = setTimeout(() => run(index + 1), step.letter ? 230 : 380);
+      };
+      speech.onerror = event => {
+        if (generation !== audioGeneration || settled) return;
+        settled = true; fail(event.error);
+      };
+      // 某些系统缺少语音时不发送结束事件；输入仍然可用，超时后恢复悬停提示。
+      speechWatchdog = setTimeout(() => { if (!settled) { settled = true; fail('timeout'); } }, 10000);
+      try { synth.speak(speech); } catch (_) { fail('failed'); }
+    }
+    run(0);
+  }
+
+  function playPrompt() {
+    if (complete) {
+      playSequence([{ text: level.word.toLowerCase() }], 'celebration');
+      return;
+    }
+    playSequence([
+      { text: level.word.toLowerCase() },
+      ...[...level.word].map((letter, slot) => ({ text: letter, letter: true, slot })),
+      { text: level.word.toLowerCase() }
+    ], 'prompt');
+  }
+
+  function renderProgress() {
+    [...$('slots').children].forEach((slot, index) => {
+      const filled = index < position;
+      slot.textContent = filled || level.showSpelling ? level.word[index] : '·';
+      slot.classList.toggle('filled', filled);
+      slot.classList.toggle('current', index === position && !complete);
+      if (index === position && !complete) slot.setAttribute('aria-current', 'step');
+      else slot.removeAttribute('aria-current');
+      slot.setAttribute('aria-label', '第 ' + (index + 1) + ' 个字母' + (filled ? '，已拼好 ' + level.word[index] : '，待填写'));
+    });
+    $('progress').textContent = '已找到 ' + position + ' / ' + level.word.length + ' 个字母';
+    $('slots').setAttribute('aria-label', '单词拼写进度，已找到 ' + position + ' 个，共 ' + level.word.length + ' 个字母');
+  }
+
+  function flash(letter, className) {
+    const button = buttons.get(letter);
+    clearTimeout(flashTimers.get(letter));
+    button.classList.remove('correct', 'try-again');
+    button.classList.add(className);
+    flashTimers.set(letter, setTimeout(() => {
+      button.classList.remove(className); flashTimers.delete(letter);
+    }, 380));
+  }
+
+  function inputLetter(letter) {
+    if (complete) return;
+    if (!choices.has(letter)) {
+      $('feedback').textContent = '找找亮着的字母，它们都可以试一试。';
+      return;
+    }
+    clearHover();
+    const correct = letter === level.word[position];
+    if (!correct) {
+      flash(letter, 'try-again');
+      $('feedback').textContent = '这是 ' + letter + '。再找找第 ' + (position + 1) + ' 个字母，慢慢来。';
+      playSequence([{ text: letter, letter: true }], 'letter');
+      return;
+    }
+    position++;
+    flash(letter, 'correct');
+    complete = position === level.word.length;
+    renderProgress();
+    if (complete) {
+      $('lesson').classList.add('complete');
+      $('task-title').textContent = '太棒啦，你拼出来了！';
+      $('feedback').textContent = level.word + '，就是“' + level.meaning + '”！';
+      $('friend-caption').textContent = '又认识了一个英文单词！';
+      $('completion-message').textContent = '你按顺序找到了每一个字母。';
+      $('completion').hidden = false;
+      $('next').textContent = levelIndex < LEVELS.length - 1 ? '下一关 →' : '再玩一次 ↻';
+      buttons.forEach(button => { button.disabled = true; });
+      playSequence([{ text: letter, letter: true }, { text: level.word.toLowerCase() }], 'celebration');
+    } else {
+      $('feedback').textContent = '找对了 ' + letter + '！继续找第 ' + (position + 1) + ' 个字母吧。';
+      playSequence([{ text: letter, letter: true }], 'letter');
+    }
+  }
+
+  for (const letters of rows) {
+    const row = document.createElement('div'); row.className = 'row';
+    for (const letter of letters) {
+      const button = document.createElement('button');
+      button.type = 'button'; button.className = 'key'; button.textContent = letter;
+      button.dataset.letter = letter; button.setAttribute('aria-label', '字母 ' + letter);
+      button.addEventListener('click', () => inputLetter(letter));
+      button.addEventListener('pointerenter', event => {
+        if (event.pointerType === 'touch' || button.disabled || complete || audioRole) return;
+        clearHover();
+        hoverTimer = setTimeout(() => {
+          hoverTimer = null;
+          if (!audioRole && !complete && !button.disabled) playSequence([{ text: letter, letter: true }], 'hover');
+        }, 240);
+      });
+      button.addEventListener('pointerleave', clearHover);
+      buttons.set(letter, button); row.appendChild(button);
+    }
+    $('keyboard').appendChild(row);
+  }
+
+  function clearHeld() {
+    held.clear(); clearHover(); buttons.forEach(button => button.classList.remove('pressed'));
+  }
+  function startLevel(index) {
+    stopAudio(); clearHeld();
+    flashTimers.forEach(timer => clearTimeout(timer)); flashTimers.clear();
+    levelIndex = index; level = LEVELS[index]; position = 0; complete = false;
+    choices = chooseLetters(level);
+    $('lesson').classList.remove('complete'); $('completion').hidden = true;
+    $('chapter').textContent = String(index + 1).padStart(2, '0');
+    $('eyebrow').textContent = '第 ' + (index + 1) + ' 关 · 认识新单词';
+    $('task-title').textContent = '一起拼出“' + level.meaning + '”的英文';
+    $('instruction').textContent = level.showSpelling
+      ? level.meaning + '的英文是 ' + level.word.toLowerCase() + '。听一听，再按顺序找字母。'
+      : '听听“' + level.meaning + '”的英文，再按顺序找字母。';
+    $('friend-caption').textContent = '一位小伙伴，等你来认识';
+    $('cat-art').style.display = level.illustration === '🐱' ? '' : 'none';
+    $('emoji-art').hidden = level.illustration === '🐱';
+    $('emoji-art').textContent = level.illustration;
+    $('emoji-art').setAttribute('aria-label', level.meaning);
+    $('emoji-art').setAttribute('aria-hidden', 'false');
+    $('slots').replaceChildren();
+    for (const letter of level.word) {
+      const slot = document.createElement('div'); slot.className = 'slot'; $('slots').appendChild(slot);
+    }
+    buttons.forEach((button, letter) => {
+      button.className = 'key' + (choices.has(letter) ? ' available' : '');
+      button.disabled = !choices.has(letter);
+    });
+    $('feedback').textContent = '从第一个字母开始，慢慢来。';
+    renderProgress(); playPrompt();
+    if (!supported) $('audio-notice').textContent = '这个浏览器暂不支持朗读，可以先看着字母拼写。';
+  }
+
+  function eventLetter(event) {
+    if (/^Key[A-Z]$/.test(event.code)) return event.code.slice(3);
+    return /^[a-zA-Z]$/.test(event.key) ? event.key.toUpperCase() : null;
+  }
+  document.addEventListener('keydown', event => {
+    if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
+    if (event.target instanceof Element && event.target.closest('input,textarea,select,[contenteditable="true"]')) return;
+    if (event.repeat && (event.key === 'Enter' || event.key === ' ') && event.target instanceof Element && event.target.closest('button')) {
+      event.preventDefault(); return;
+    }
+    const letter = eventLetter(event);
+    if (!letter || complete) return;
+    event.preventDefault();
+    if (event.repeat || held.has(letter)) return;
+    held.add(letter);
+    if (choices.has(letter)) buttons.get(letter).classList.add('pressed');
+    inputLetter(letter);
+  });
+  document.addEventListener('keyup', event => {
+    const letter = eventLetter(event);
+    held.delete(letter); buttons.get(letter)?.classList.remove('pressed');
+  });
+  // 空白处的首次点击也能恢复浏览器拦截的开场提示，字母点击由输入逻辑负责。
+  document.addEventListener('click', event => {
+    if (event.isTrusted && needsGesture && !audioRole && position === 0 &&
+        !(event.target instanceof Element && event.target.closest('button'))) playPrompt();
+  });
+  $('listen').addEventListener('click', playPrompt);
+  $('next').addEventListener('click', () => startLevel(levelIndex < LEVELS.length - 1 ? levelIndex + 1 : levelIndex));
+  window.addEventListener('blur', clearHeld);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { clearHeld(); stopAudio(); } });
+  window.addEventListener('pagehide', () => { clearHeld(); stopAudio(); });
+  if (supported) { refreshVoices(); synth.addEventListener('voiceschanged', refreshVoices); }
+  startLevel(0);
+})();
+</script>
+</body>
+</html>
