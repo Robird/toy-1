@@ -108,6 +108,31 @@
     .completion p { margin: 0 0 13px; color: #697b60; font-size: 14px; }
     .next { border: 0; border-radius: 13px; background: var(--green); color: white; font-size: 15px; font-weight: 650; padding: 12px 23px; box-shadow: 0 3px 0 #254a40; }
     .next:hover { background: #2e594d; }
+    .control { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; min-width: 84px; min-height: 91px; padding: 9px 12px; }
+    .control svg { width: 48px; height: 48px; margin: 0; flex-shrink: 0; }
+    .control-label { font-size: 13px; line-height: 1.4; }
+    .actions .audio-state { flex-basis: 100%; }
+    .help-area { margin-top: 16px; padding-top: 14px; border-top: 1px dashed #cbb9dc; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+    .help-area .control { background: #fff4d8; border: 2px solid #ceaa59; color: #76551d; }
+    .completion .control { margin: 0 8px 8px 0; min-width: 116px; }
+    .result-energy { display: block; font-size: 20px; letter-spacing: 2px; color: #ffdf74; }
+    .help-dialog { position: fixed; inset: 16px auto auto 50%; transform: translateX(-50%); margin: 0; width: min(600px, calc(100% - 32px)); max-height: calc(100dvh - 32px); overflow-y: auto; padding: 22px; border: 3px solid #8b6b9e; border-radius: 24px; background: #fffaf0; color: #29463d; box-shadow: 0 16px 60px #2d183555; }
+    .help-dialog::backdrop { background: #2c263a88; }
+    .help-dialog h2 { margin: 15px 0 5px; font-size: 22px; }
+    .help-dialog p { line-height: 1.6; font-size: 13px; }
+    .help-toolbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 28px; }
+    .help-toolbar .control { width: 44%; min-height: 108px; border-width: 2px; }
+    .help-back { border: 2px solid #56795f; background: #eaf4e5; color: #315b41; border-radius: 15px; font-weight: 700; }
+    .help-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin: 18px 0 0; }
+    .help-card { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 8px; min-width: 0; min-height: 166px; border: 3px solid #d3c6df; border-radius: 18px; background: #fffdf9; color: #604676; }
+    .help-card > svg { width: 86px; height: 86px; }
+    .help-card[aria-pressed="true"] { border-color: #8050a0; background: #efe1fa; }
+    .choice-mark { visibility: hidden; position: absolute; top: 7px; right: 9px; font-size: 24px; font-weight: 800; }
+    .help-card[aria-pressed="true"] .choice-mark { visibility: visible; }
+    .help-retry { font-size: 12px; font-weight: 650; }
+    .help-notice { min-height: 21px; color: #805615; }
+    .control:disabled { opacity: .4; }
+    .icon-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
     [hidden] { display: none !important; }
     .lesson.complete .cat, .lesson.complete .emoji, .lesson.complete .meaning-art { animation: cat-dance .6s ease-in-out 3; }
     .lesson.complete .cat-scene::before { background: #e8efdb; }
@@ -163,6 +188,12 @@
       .shift-state { font-size: 10px; }
       .keyboard-note { flex-direction: column; gap: 3px; }
       .audio-notice { margin-top: 12px; }
+      .control { min-width: 76px; padding: 8px; }
+      .help-area { justify-content: center; }
+      .help-dialog { padding: 16px; }
+      .help-toolbar { gap: 24px; }
+      .help-cards { gap: 12px; }
+      .help-card > svg { width: 72px; height: 72px; }
     }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { animation: none !important; transition: none !important; }
@@ -171,6 +202,18 @@
   </style>
 </head>
 <body>
+<svg class="icon-defs" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
+  <symbol id="icon-ear" viewBox="0 0 64 64"><path d="M25 50c-12-6-15-30 0-39 16-10 36 5 28 22-3 7-11 9-12 16-2 11-13 11-16 1Z" fill="#f4d6b9" stroke="currentColor" stroke-width="3"/><path d="M29 37c-8-13 7-25 15-13 4 7-5 10-8 17M8 20c-6 7-6 17 0 24M16 25c-3 5-3 9 0 14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></symbol>
+  <symbol id="icon-check" viewBox="0 0 64 64"><rect x="7" y="9" width="50" height="46" rx="8" fill="#fff8e6" stroke="currentColor" stroke-width="3"/><path d="m17 32 10 10 22-23" fill="none" stroke="#38685b" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="icon-erase" viewBox="0 0 64 64"><path d="M7 32 23 12h33v40H23Z" fill="#fff8e6" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/><path d="m30 23 17 18m0-18L30 41" stroke="currentColor" stroke-width="4" stroke-linecap="round"/></symbol>
+  <symbol id="icon-friend" viewBox="0 0 64 64"><path d="m9 30 2-19 14 9m15 0 13-9 2 19" fill="#e9bc79" stroke="currentColor" stroke-width="2"/><ellipse cx="32" cy="38" rx="25" ry="21" fill="#edc58d" stroke="currentColor" stroke-width="2"/><circle cx="22" cy="35" r="3" fill="#4b493a"/><circle cx="42" cy="35" r="3" fill="#4b493a"/><path d="m28 43 4 4 4-4m-4 4v5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="icon-help" viewBox="0 0 96 80"><use href="#icon-friend" x="0" y="18" width="62" height="62"/><path d="M59 4h29v30H65l-9 8V10Z" fill="#fff" stroke="currentColor" stroke-width="3"/><text x="74" y="28" text-anchor="middle" fill="currentColor" font-size="27" font-weight="800">?</text></symbol>
+  <symbol id="icon-back" viewBox="0 0 64 64"><path d="m27 12-18 17 18 17M11 29h29c16 0 16 24 0 24" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="icon-learn" viewBox="0 0 96 80"><use href="#icon-friend" x="20" y="0" width="56" height="56"/><path d="M9 40q21-8 39 3 18-11 39-3v33q-21-8-39 0-18-8-39 0Z" fill="#f7e9c8" stroke="currentColor" stroke-width="3"/><path d="M48 43v30M19 51l18 3m-18 7 18 3m22-10 18-3m-18 13 18-3" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+  <symbol id="icon-road" viewBox="0 0 96 80"><use href="#icon-friend" x="0" y="8" width="48" height="48"/><path d="m40 76 26-34 23 34" fill="#e1e8cf" stroke="currentColor" stroke-width="3"/><path d="M48 21h35m-12-12 13 12-13 12" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><path d="m64 58 5 12" stroke="#fff" stroke-width="4"/></symbol>
+  <symbol id="icon-muted" viewBox="0 0 32 32"><path d="m15 5-7 7H3v8h5l7 7V5Zm6 6 8 12m0-12-8 12" fill="#fff5db" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/></symbol>
+  <symbol id="icon-practice" viewBox="0 0 64 64"><rect x="7" y="7" width="44" height="50" rx="5" fill="#fff8e6" stroke="currentColor" stroke-width="3"/><path d="m24 43 7-18 10 4-7 18-10 5Zm7-18 4-8 10 4-4 8" fill="#e7aa50" stroke="currentColor" stroke-width="2"/><path d="M14 17h9M14 25h6" stroke="currentColor" stroke-width="2"/></symbol>
+</defs></svg>
 <main>
   <header class="header">
     <p class="brand"><span aria-hidden="true">Aa</span>单词小冒险</p>
@@ -215,16 +258,17 @@
       <div class="image-options" id="image-options" role="group" aria-label="选择听到的图案" hidden></div>
       <p class="progress" id="progress">已找到 0 / 3 个字母</p>
       <div class="actions">
-        <button class="listen" id="listen" type="button" aria-label="再听一次英文单词、中文释义和字母拼写"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M11 4 5 9H2v6h3l6 5Z"/><path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></svg>再听一次</button>
+        <button class="listen control" id="listen" type="button" aria-label="再听一次英文单词、中文释义和字母拼写"><svg aria-hidden="true"><use href="#icon-ear"/></svg><span class="control-label">再听一次</span></button>
+        <button class="boss-action control" id="erase" type="button" hidden><svg aria-hidden="true"><use href="#icon-erase"/></svg><span class="control-label">改一个字母</span></button>
+        <button class="submit control" id="submit" type="button" aria-label="检查答案" hidden disabled><svg aria-hidden="true"><use href="#icon-check"/></svg><span class="control-label">检查答案</span></button>
         <span class="audio-state" id="audio-state">听一听，也可以直接开始</span>
-        <button class="submit" id="submit" type="button" hidden disabled>我答好了</button>
-        <button class="boss-action" id="erase" type="button" hidden>⌫ 改一个字母</button>
-        <button class="boss-action" id="answer" type="button" hidden>看看答案</button>
-        <button class="boss-action" id="skip" type="button" hidden>下次再来</button>
-        <button class="boss-action" id="audio-continue" type="button" hidden>声音没播放，继续普通题</button>
+      </div>
+      <div class="help-area" id="help-area" hidden>
+        <button class="boss-action control" id="help" type="button" aria-haspopup="dialog" aria-controls="help-dialog"><svg aria-hidden="true"><use href="#icon-help"/></svg><span class="control-label">帮帮我</span></button>
+        <button class="boss-action control" id="audio-continue" type="button" hidden><svg aria-hidden="true"><use href="#icon-muted"/></svg><span class="control-label">声音没播放<br>找小伙伴帮忙</span></button>
       </div>
       <p class="feedback" id="feedback" role="status" aria-live="polite">从第一个字母开始，慢慢来。</p>
-      <div class="completion" id="completion" hidden><p id="completion-message">拼对啦！即将认识下一个单词。</p><button class="next" id="next" type="button">下一个单词 →</button> <button class="boss-action" id="practice" type="button" hidden>跟着拼一遍</button></div>
+      <div class="completion" id="completion" hidden><p id="completion-message">拼对啦！即将认识下一个单词。</p><button class="next control" id="next" type="button"><svg aria-hidden="true"><use href="#icon-road"/></svg><span class="result-energy" id="result-energy" aria-hidden="true" hidden>⚡⚡⚡⚡⚡</span><span class="control-label" id="next-label">下一个单词</span></button> <button class="boss-action control" id="practice" type="button" hidden><svg aria-hidden="true"><use href="#icon-practice"/></svg><span class="control-label">跟着拼一遍</span></button></div>
     </div>
   </section>
   <section class="keyboard-area" id="keyboard-area" aria-labelledby="keyboard-title">
@@ -238,6 +282,19 @@
   <p class="audio-notice" id="audio-notice" role="status"></p>
   <noscript><p>请启用 JavaScript，开始单词小冒险。</p></noscript>
 </main>
+<dialog class="help-dialog" id="help-dialog" aria-labelledby="help-title" aria-describedby="help-description">
+  <div class="help-toolbar">
+    <button class="help-back control" id="help-back" type="button" autofocus><svg aria-hidden="true"><use href="#icon-back"/></svg><span class="control-label">回去再想</span></button>
+    <button class="submit control" id="help-confirm" type="button" disabled><svg aria-hidden="true"><use href="#icon-check"/></svg><span class="control-label" id="help-confirm-label">先选一张图卡</span></button>
+  </div>
+  <h2 id="help-title">小伙伴来帮忙</h2>
+  <p id="help-description">点图卡听说明。选好了，再点上面的大勾；回头箭头可以继续想。</p>
+  <div class="help-cards">
+    <button class="help-card" id="help-learn" type="button" aria-pressed="false"><svg aria-hidden="true"><use href="#icon-learn"/></svg><span>一起学答案</span><span class="choice-mark" aria-hidden="true">✓</span><span class="help-retry" id="help-learn-retry" hidden>↻ 点图卡再听说明</span></button>
+    <button class="help-card" id="help-leave" type="button" aria-pressed="false"><svg aria-hidden="true"><use href="#icon-road"/><use id="help-muted" href="#icon-muted" x="60" y="45" width="30" height="30" hidden/></svg><span id="help-leave-label">去普通关</span><span class="choice-mark" aria-hidden="true">✓</span><span class="help-retry" id="help-leave-retry" hidden>↻ 点图卡再听说明</span></button>
+  </div>
+  <p class="help-notice" id="help-notice" role="status"></p>
+</dialog>
 <script src="word-adventure-words.js"></script>
 <script src="word-adventure-game.js"></script>
 <script>
@@ -271,6 +328,7 @@
   let currentWord, position = 0, complete = false, choices = new Set();
   let currentTask = null, input = '', selectedEmoji = null, selectedOption = -1;
   let heardTarget = false, audioFailed = false, practiceMode = false;
+  let helpChoice = null;
   // 只切换显示形式，词库、按键匹配和朗读文本继续使用原始内容。
   let lowercaseLetters = false;
   let feedbackText = $('feedback').textContent, audioStateText = $('audio-state').textContent;
@@ -319,6 +377,7 @@
     } catch (_) { storageNotice('这次进度没能保存，请保持页面打开。'); }
   }
   function isBoss() { return currentTask && currentTask.kind !== 'normal'; }
+  function helpOpen() { return $('help-dialog').open; }
   function renderBuff() {
     $('score').textContent = progress.score;
     $('buff').hidden = progress.buffRemaining === 0;
@@ -465,7 +524,7 @@
   }
   // 悬停只替换悬停语音；提示和按键反馈优先，结束后再读仍停留的最新字母。
   function playHoveredLetter() {
-    if (!supported || document.hidden || needsGesture || complete || !hoverReady || !hoveredLetter ||
+    if (helpOpen() || !supported || document.hidden || needsGesture || complete || !hoverReady || !hoveredLetter ||
         buttons.get(hoveredLetter)?.disabled || (audioRole && audioRole !== 'hover')) return;
     const letter = hoveredLetter;
     hoverReady = false; // 每次停留只读一次，不能在语音结束后循环重读。
@@ -473,7 +532,7 @@
   }
   function requestHover(letter) {
     clearHover();
-    if (!supported || document.hidden || complete || buttons.get(letter)?.disabled) return;
+    if (helpOpen() || !supported || document.hidden || complete || buttons.get(letter)?.disabled) return;
     hoveredLetter = letter;
     hoverTimer = setTimeout(() => {
       hoverTimer = null; hoverReady = true;
@@ -495,8 +554,12 @@
 
   // 语音独立于输入进度。只有当前播放批次可以更新界面，取消后的回调不会干扰新输入。
   function playSequence(steps, role, startDelay = 0) {
+    if (helpOpen() && role !== 'help') return;
     stopAudio();
-    if (!supported || document.hidden) return;
+    if (!supported || document.hidden) {
+      if (role === 'help') helpSpeechFailed();
+      return;
+    }
     refreshVoices();
     const generation = audioGeneration;
     let voiceNotice = '';
@@ -517,15 +580,15 @@
       if (complete) scheduleNextWord();
       else playHoveredLetter();
     }
-    function fail(error) {
+    function fail(error, step) {
       if (generation !== audioGeneration) return;
       clearHover(); stopAudio();
-      if (isBoss() && !complete) {
+      if (isBoss() && !complete && step.target) {
         audioFailed = true;
         if (error === 'not-allowed') needsGesture = true;
         $('audio-notice').textContent = heardTarget
           ? '这次声音没播放出来，仍可提交刚才听到的答案，也可以再听一次。'
-          : '这次声音没播放出来。点“再听一次”重试，或继续普通题。';
+          : '这次声音没播放出来。点耳朵重试，或点小伙伴找帮助。';
         renderBossControls();
       } else if (error === 'not-allowed') {
         needsGesture = true;
@@ -552,12 +615,31 @@
         candidates.find(preferred) || candidates.find(voice => voice.localService) || candidates[0] || null;
       // 中文语音不可用时跳过释义，保留英文和字母提示。
       function handleError(error) {
-        if (chinese && (error === 'language-unavailable' || error === 'voice-unavailable')) {
+        if (step.purpose === 'help' || step.purpose === 'controls') {
+          clearTimeout(speechWatchdog); clearListening(); activeUtterance = null;
+          if (step.purpose === 'help') helpSpeechFailed();
+          else {
+            voiceNotice = complete && role === 'celebration'
+              ? '结果按钮的说明没能播放，请家长帮忙说明图示用途。'
+              : '控件说明没能播放，请家长帮忙说明图示用途。' + (!complete && role === 'prompt' ? '英文单词会继续播放。' : '');
+            $('audio-notice').textContent = voiceNotice;
+          }
+          // 一步说明失败不能结束后面的目标英文，也不授予或撤销听音资格。
+          synth.cancel();
+          audioTimer = setTimeout(() => run(index + 1), 380);
+        } else if (isBoss() && complete && role === 'celebration' && chinese && step.purpose === 'result-meaning') {
+          // 结果释义不是目标听音；故障后仍尝试最后的按钮用途说明。
+          clearTimeout(speechWatchdog); clearListening(); activeUtterance = null;
+          voiceNotice = '中文释义没能播放，答案仍可看。请家长帮忙读一遍。';
+          $('audio-notice').textContent = voiceNotice;
+          synth.cancel();
+          audioTimer = setTimeout(() => run(index + 1), 380);
+        } else if (chinese && (error === 'language-unavailable' || error === 'voice-unavailable')) {
           clearTimeout(speechWatchdog); clearListening();
           voiceNotice = '暂时没有中文声音，中文释义仍可看。请在设备上添加普通话语音后再试。';
           $('audio-notice').textContent = voiceNotice;
           audioTimer = setTimeout(() => run(index + 1), 380);
-        } else fail(error);
+        } else fail(error, step);
       }
       let settled = false, started = false;
       speech.onstart = () => {
@@ -578,24 +660,28 @@
           $('audio-notice').textContent = '';
           renderBossControls();
         }
-        audioTimer = setTimeout(() => run(index + 1), step.letter ? 100 : 380);
+        const gap = step.letter && steps[index + 1]?.letter ? SPELLING_LETTER_GAP : step.letter ? 100 : 380;
+        audioTimer = setTimeout(() => run(index + 1), gap);
       };
       speech.onerror = event => {
         if (generation !== audioGeneration || settled) return;
         settled = true; handleError(event.error);
       };
       // 某些系统缺少语音时不发送结束事件；输入仍然可用，超时后恢复悬停提示。
-      speechWatchdog = setTimeout(() => { if (!settled) { settled = true; fail('timeout'); } }, 10000);
-      try { synth.speak(speech); } catch (_) { fail('failed'); }
+      speechWatchdog = setTimeout(() => { if (generation === audioGeneration && !settled) { settled = true; handleError('timeout'); } }, 10000);
+      try { synth.speak(speech); } catch (_) { settled = true; handleError('failed'); }
     }
     if (startDelay) audioTimer = setTimeout(() => run(0), startDelay);
     else run(0);
   }
 
   function playPrompt(startDelay = 0, introduction = false) {
+    if (helpOpen()) return;
     if (isBoss() && !complete && !practiceMode) {
       playSequence([
-        ...(introduction ? [{ text: '稀有挑战！挑战成功，接下来五题双倍！', lang: 'zh-CN' }] : []),
+        ...(introduction ? ['稀有挑战！挑战成功，接下来五题双倍！', '点耳朵，再听一遍。', '想好了，点大勾检查。', '需要帮助，点小伙伴。',
+          ...(currentTask.kind === 'image' ? [] : ['退格可以擦掉一个字母。'])]
+          .map(text => ({ text, lang: 'zh-CN', purpose: 'controls' })) : []),
         { text: currentWord.speech, target: true }
       ], 'prompt', startDelay);
       return;
@@ -655,7 +741,7 @@
   function renderProgress() {
     if (isBoss() && !practiceMode) {
       if (currentTask.kind === 'image') {
-        $('progress').textContent = complete ? '挑战已结束' : selectedEmoji === null ? '选一个图案，再点“我答好了”' : '已选好，想好了再提交';
+        $('progress').textContent = complete ? '挑战已结束' : selectedEmoji === null ? '选一个图案，再点大勾检查' : '已选好，想好了再点大勾';
       } else {
         const missing = currentTask.kind === 'partial' ? currentTask.missingPositions : [...currentWord.letters].map((_, i) => i);
         [...$('slots').children].forEach((slot, index) => {
@@ -691,39 +777,101 @@
     $('slots').setAttribute('aria-label', '单词拼写进度，已找到 ' + position + ' 个，共 ' + currentWord.letters.length + ' 个字母');
   }
 
+  function renderHelp() {
+    $('help-learn').setAttribute('aria-pressed', String(helpChoice === 'learn'));
+    $('help-leave').setAttribute('aria-pressed', String(helpChoice === 'leave'));
+    const unavailable = !heardTarget && audioFailed;
+    $('help-leave-label').textContent = unavailable ? '声音没播放，去普通关' : '去普通关';
+    $('help-muted').hidden = !unavailable;
+    $('help-confirm').disabled = !helpOpen() || complete || helpChoice === null;
+    $('help-confirm-label').textContent = helpChoice === 'learn' ? '一起学' : helpChoice === 'leave' ? '去普通关' : '先选一张图卡';
+  }
+
+  function helpSpeechFailed() {
+    if (!helpOpen()) return;
+    $('help-notice').textContent = '说明声音没能播放，请家长帮忙说明。点图卡可以重听，仍可返回、改选或点大勾。';
+    if (helpChoice) $('help-' + helpChoice + '-retry').hidden = false;
+  }
+
+  function openHelp() {
+    if (storageBlocked || !isBoss() || complete || helpOpen()) return;
+    clearHeld(); stopAudio(); stopEffects();
+    helpChoice = null;
+    $('help-notice').textContent = '';
+    $('help-learn-retry').hidden = true; $('help-leave-retry').hidden = true;
+    $('help-dialog').showModal();
+    renderHelp(); renderBossControls();
+    $('help-back').focus();
+    playSequence([{ text: '这里可以找帮助。回头箭头，可以回去继续想。', lang: 'zh-CN', purpose: 'help' }], 'help');
+  }
+
+  function chooseHelp(choice) {
+    if (!helpOpen() || !isBoss() || complete) return;
+    helpChoice = choice;
+    $('help-notice').textContent = '';
+    $('help-learn-retry').hidden = true; $('help-leave-retry').hidden = true;
+    renderHelp();
+    const explanations = choice === 'learn'
+      ? ['一起看答案，这次不拿双倍能量。', '想一起学，就点大勾。', '回头箭头可以继续想。']
+      : !heardTarget && audioFailed
+        ? ['声音没播放，继续普通题，这次不算答错。', '要走就点大勾。', '回头箭头可以继续想。']
+        : ['回普通关，这次先不拿双倍能量。', '要走就点大勾。', '回头箭头可以继续想。'];
+    playSequence(explanations.map(text => ({ text, lang: 'zh-CN', purpose: 'help' })), 'help');
+  }
+
+  function closeHelp(resume = true) {
+    if (!helpOpen()) return;
+    stopAudio(); clearHeld();
+    $('help-dialog').close(); helpChoice = null;
+    renderHelp(); renderBossControls();
+    if (resume && isBoss() && !complete && !storageBlocked) {
+      $('help').focus();
+      if (!heardTarget) playPrompt();
+    }
+  }
+
+  function confirmHelp() {
+    if (!helpOpen() || !isBoss() || complete || helpChoice === null) return;
+    finishBoss(helpChoice === 'learn' ? 'assisted' : !heardTarget && audioFailed ? 'unavailable' : 'skipped');
+  }
+
   function renderBossControls() {
     if (!isBoss()) return;
     const ready = currentTask.kind === 'image' ? selectedEmoji !== null
       : input.length === (currentTask.kind === 'partial' ? currentTask.missingPositions.length : currentWord.letters.length);
-    $('submit').disabled = complete || !heardTarget || !ready;
-    $('erase').disabled = complete || input.length === 0;
+    $('submit').disabled = helpOpen() || complete || !heardTarget || !ready;
+    $('erase').disabled = helpOpen() || complete || input.length === 0;
     $('audio-continue').hidden = complete || heardTarget || !audioFailed;
-    $('answer').hidden = complete; $('skip').hidden = complete;
+    $('help-area').hidden = complete;
     $('submit').hidden = complete; $('erase').hidden = complete || currentTask.kind === 'image';
   }
 
   function finishBoss(outcome) {
     if (complete || !isBoss()) return;
     complete = true; practiceMode = false;
+    closeHelp(false);
     clearHover(); stopAudio();
     const result = settle(outcome);
     if (!result) return;
+    if (outcome === 'skipped' || outcome === 'unavailable') {
+      startWord(false);
+      if (outcome === 'unavailable') $('audio-notice').textContent = '刚才挑战的声音没能播放，已继续普通题，不算答错。';
+      return;
+    }
     buttons.forEach(button => { button.disabled = true; });
     $('lesson').classList.toggle('complete', outcome === 'correct');
     $('task-title').textContent = outcome === 'correct' ? '挑战成功！双倍能量到手！'
-      : outcome === 'wrong' ? '差一点！我们一起记住它' : outcome === 'assisted' ? '一起看看答案吧'
-      : outcome === 'unavailable' ? '声音休息了，继续小冒险' : '下次再挑战！';
+      : outcome === 'wrong' ? '差一点！我们一起记住它' : '一起看看答案吧';
     const messages = {
       correct: '获得五颗双倍能量！接下来 5 道普通题，每题积分 ×2。',
       wrong: '这次没拼对也没关系。记住答案，下次再挑战！',
-      assisted: '这次一起学习答案，下次试着自己回忆。',
-      skipped: '已跳过这次挑战，普通题一样能攒积分。',
-      unavailable: '这次声音没能播放，继续普通题，不算答错。'
+      assisted: '这次一起学习答案，下次试着自己回忆。'
     };
     renderFeedback(messages[outcome]);
     $('completion-message').textContent = messages[outcome];
     $('completion').hidden = false;
-    $('next').textContent = outcome === 'correct' ? '带着双倍能量出发 →' : '继续普通题 →';
+    $('next-label').textContent = outcome === 'correct' ? '带着双倍能量出发' : '去普通关';
+    $('result-energy').hidden = outcome !== 'correct';
     $('practice').hidden = currentTask.kind === 'image' || !['wrong', 'assisted'].includes(outcome);
     $('friend-caption').textContent = outcome === 'correct' ? '五颗能量，五次双倍！' : '每次挑战都是新的练习';
     if (currentTask.kind === 'image') {
@@ -735,18 +883,20 @@
     renderLetterCase(); renderBuff();
     const soundDuration = outcome === 'correct' ? playVictorySound() : 0;
     playSequence([
-      ...(outcome === 'correct' ? [{ text: '挑战成功，接下来五题双倍！', lang: 'zh-CN' }] : []),
-      { text: currentWord.speech }, { text: currentWord.meaning, lang: 'zh-CN' }
+      ...(outcome === 'correct' ? [{ text: '挑战成功，接下来五题双倍！', lang: 'zh-CN', purpose: 'controls' }] : []),
+      { text: currentWord.speech }, { text: currentWord.meaning, lang: 'zh-CN', purpose: 'result-meaning' },
+      { text: outcome === 'correct' ? '点大箭头，带着双倍能量出发。'
+        : currentTask.kind === 'image' ? '点大箭头，去普通关。' : '点写字卡，跟着拼。点大箭头，去普通关。', lang: 'zh-CN', purpose: 'controls' }
     ], 'celebration', soundDuration);
   }
 
   function submitBoss() {
-    if (!isBoss() || complete || $('submit').disabled) return;
+    if (helpOpen() || !isBoss() || complete || $('submit').disabled) return;
     finishBoss(game.isBossAnswerCorrect(currentTask, currentTask.kind === 'image' ? selectedEmoji : input) ? 'correct' : 'wrong');
   }
 
   function eraseLetter() {
-    if (!isBoss() || complete || currentTask.kind === 'image' || !input.length) return;
+    if (helpOpen() || !isBoss() || complete || currentTask.kind === 'image' || !input.length) return;
     input = input.slice(0, -1); clearHover(); renderProgress();
   }
 
@@ -761,7 +911,7 @@
   }
 
   function inputLetter(letter) {
-    if (storageBlocked || (complete && !practiceMode)) return;
+    if (helpOpen() || storageBlocked || (complete && !practiceMode)) return;
     clearHover();
     if (isBoss() && !practiceMode) {
       if (currentTask.kind === 'image') return;
@@ -856,7 +1006,7 @@
   }
 
   function startWord(allowBoss = true) {
-    if (storageBlocked) return;
+    if (helpOpen() || storageBlocked) return;
     clearTimeout(nextWordTimer); nextWordTimer = null;
     stopAudio(); stopEffects(); clearHeld();
     flashTimers.forEach(timer => clearTimeout(timer)); flashTimers.clear();
@@ -883,9 +1033,9 @@
     renderArt(currentTask.kind === 'image');
     $('listen').setAttribute('aria-label', isBoss() ? '再听一次完整英文单词' : '再听一次英文单词、中文释义和字母拼写');
     $('submit').hidden = !isBoss(); $('erase').hidden = !isBoss() || currentTask.kind === 'image';
-    $('answer').hidden = !isBoss(); $('skip').hidden = !isBoss();
+    $('help-area').hidden = !isBoss();
     $('audio-continue').hidden = true; $('practice').hidden = true;
-    $('next').textContent = '下一个单词 →';
+    $('next-label').textContent = '下一个单词'; $('result-energy').hidden = true;
     $('keyboard-area').hidden = currentTask.kind === 'image';
     $('keyboard-title').textContent = isBoss() ? '自己选字母，想好了再提交' : '找找亮着的字母';
     $('keyboard-tip').textContent = isBoss() ? '26 个字母都可以输入，提交前可以退格修改。' : '亮着的字母都可以试一试，按错也没关系。';
@@ -910,7 +1060,7 @@
         picture.textContent = option.emoji; picture.setAttribute('aria-hidden', 'true');
         button.appendChild(picture);
         button.addEventListener('click', () => {
-          if (complete) return;
+          if (helpOpen() || complete) return;
           selectedEmoji = option.emoji; selectedOption = index;
           [...$('image-options').children].forEach((item, i) => item.setAttribute('aria-pressed', String(i === selectedOption)));
           renderProgress();
@@ -922,7 +1072,7 @@
       button.className = 'key' + (choices.has(letter) ? ' available' : '');
       button.disabled = !choices.has(letter);
     });
-    renderFeedback(isBoss() ? '先听一听，再自己试试。可以重听，也可以下次再挑战。' : '从第一个字母开始，慢慢来。');
+    renderFeedback(isBoss() ? '先听一听，再自己试试。点耳朵重听，点小伙伴找帮助。' : '从第一个字母开始，慢慢来。');
     $('audio-notice').textContent = '';
     renderLetterCase(); renderBuff();
     const entryDuration = isBoss() ? playVictorySound() : 0;
@@ -934,7 +1084,7 @@
   }
 
   function startPractice() {
-    if (!isBoss() || !complete || $('practice').hidden) return;
+    if (helpOpen() || !isBoss() || !complete || $('practice').hidden) return;
     stopAudio(); clearHeld();
     practiceMode = true; position = 0; choices = chooseLetters(currentWord);
     $('practice').hidden = true; $('task-title').textContent = '一起跟着拼一遍';
@@ -950,6 +1100,10 @@
     return /^[a-zA-Z]$/.test(event.key) ? event.key.toUpperCase() : null;
   }
   document.addEventListener('keydown', event => {
+    if (helpOpen()) {
+      if (event.repeat && (event.key === 'Enter' || event.key === ' ')) event.preventDefault();
+      return;
+    }
     if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
     if (event.target instanceof Element && event.target.closest('input,textarea,select,[contenteditable="true"]')) return;
     if (event.repeat && (event.key === 'Enter' || event.key === ' ') && event.target instanceof Element && event.target.closest('button')) {
@@ -971,25 +1125,31 @@
     inputLetter(letter);
   });
   document.addEventListener('keyup', event => {
+    if (helpOpen()) return;
     const letter = eventLetter(event);
     held.delete(letter); buttons.get(letter)?.classList.remove('pressed');
   });
   // 空白处的首次点击也能恢复浏览器拦截的开场提示，字母点击由输入逻辑负责。
   document.addEventListener('click', event => {
-    if (event.isTrusted && needsGesture && !audioRole && position === 0 &&
+    if (!helpOpen() && event.isTrusted && needsGesture && !audioRole && position === 0 &&
         !(event.target instanceof Element && event.target.closest('button'))) playPrompt();
   });
-  $('listen').addEventListener('click', () => { clearHover(); prepareEffects(); stopEffects(); playPrompt(); });
+  $('listen').addEventListener('click', () => { if (helpOpen()) return; clearHover(); prepareEffects(); stopEffects(); playPrompt(); });
   $('letter-case').addEventListener('click', () => {
+    if (helpOpen()) return;
     lowercaseLetters = !lowercaseLetters;
     renderLetterCase();
   });
-  $('next').addEventListener('click', () => { if (complete) startWord(); });
+  $('next').addEventListener('click', () => { if (!helpOpen() && complete) startWord(); });
   $('submit').addEventListener('click', submitBoss);
   $('erase').addEventListener('click', eraseLetter);
-  $('answer').addEventListener('click', () => finishBoss('assisted'));
-  $('skip').addEventListener('click', () => finishBoss('skipped'));
-  $('audio-continue').addEventListener('click', () => { if (!heardTarget && audioFailed) finishBoss('unavailable'); });
+  $('help').addEventListener('click', openHelp);
+  $('help-back').addEventListener('click', () => closeHelp());
+  $('help-learn').addEventListener('click', () => chooseHelp('learn'));
+  $('help-leave').addEventListener('click', () => chooseHelp('leave'));
+  $('help-confirm').addEventListener('click', confirmHelp);
+  $('help-dialog').addEventListener('cancel', event => { event.preventDefault(); closeHelp(); });
+  $('audio-continue').addEventListener('click', openHelp);
   $('practice').addEventListener('click', startPractice);
   window.addEventListener('blur', () => { clearHeld(); if (isBoss()) stopAudio(); });
   document.addEventListener('visibilitychange', () => {

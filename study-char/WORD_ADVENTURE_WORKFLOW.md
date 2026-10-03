@@ -6,7 +6,7 @@
 
 动态 Boss 已实现：最近 100 条历史取材、听音选图/部分拼写/完整拼写、首次独立答对获得 5 次普通题双倍能量。设计、实现入口与验证命令见 [动态 Boss 设计方案](docs/boss-design.md)，原设计裁决见 [设计审查记录](docs/boss-design-review.md)。
 
-试玩发现不识字与误触问题，已形成待实施的 [Boss 控件改进方案](docs/boss-controls-design.md) 和 [审查记录](docs/boss-controls-design-review.md)：用固定图示和短语音说明，求助图卡先选择、另点勾才执行。此次仅更新文档，当前游戏仍沿用原控件。
+试玩发现的不识字与误触问题已按 [Boss 控件改进方案](docs/boss-controls-design.md) 实施，理由见 [审查记录](docs/boss-controls-design-review.md)：固定图示和短语音说明，求助图卡先选择、另点勾才执行。返回保留原答案，跳过或听音故障确认后直接普通题；儿童独立操作效果仍需试玩。
 
 ## 新会话启动提示
 
@@ -31,13 +31,14 @@
 | 渲染入口 | `startWord` 支持猫 SVG、emoji 和中文提示 |
 | 数据检查 | `validateWord` 支持英文单词和含空格短语；尚无 SVG 注册表检查 |
 | 难度配置 | `DEFAULT_GAME_OPTIONS` 集中配置，URL 可覆盖；词条不保存难度字段 |
+| 字母朗读间隔 | `SPELLING_LETTER_GAP = 0`，连续字母不再额外等待原来的 100 ms；字母语速仍为 1.0，单词／中文说明的间隔沿用原值 |
 | 短语支持 | 空格自动分隔，仅需输入字母；长词使用较小拼写格 |
 | 出题方式 | `drawWord` 从完整单词池等概率随机抽取，允许重复 |
 | 动态挑战 | `word-adventure-game.js` 从 History 100 的普通完成记录取词，排除最近两道普通词；三种合法题型随机出现，原型遇敌间隔 8–12 道普通题 |
 | 双倍奖励 | Boss 首次独立正确授予 5 次普通题 ×2；本地保存剩余能量，期间暂停遇敌 |
-| Boss 控件改进 | 方案已审查、尚未实施；见 `docs/boss-controls-design.md`，后续覆盖看答案、跳过、故障继续与结果页路径 |
+| Boss 控件改进 | 已实施固定 SVG、短语音和原生求助面板；探索不结算、返回保留原题、另点勾执行，退出直达普通题；见 `docs/boss-controls-design.md` |
 | 进度保存 | `word-adventure-progress-v1` 统一保存积分、能量、遇敌计数、历史；首次迁入 `word-adventure-score-v1`，保留旧 key；损坏进度暂停游戏，写入失败有提示 |
-| 功能回归 | `tests/boss-rules.test.cjs` 11 项与 `tests/boss-browser.test.cjs` 12 项通过；桌面/窄屏已查看，目标设备人耳试听仍需实际确认 |
+| 功能回归 | `tests/boss-rules.test.cjs` 11 项与 `tests/boss-browser.test.cjs` 23 项通过；独立复核、原生语音与桌面／390 px 求助面板验收通过，目标设备人耳试听与儿童理解仍需实际确认 |
 | 通用插画接口 | 尚未实现 |
 | 独立 SVG 源文件 | 尚未建立；已有猫仍内嵌于 HTML |
 | 最近批次 | `docs/word-adventure-batches/batch-001.md`，已完成；从最初 6 条新增 437 条 |
