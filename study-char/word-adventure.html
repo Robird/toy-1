@@ -19,6 +19,12 @@
     .brand span { display: inline-grid; place-items: center; width: 34px; height: 34px; margin-right: 10px; border-radius: 11px; background: var(--green); color: #fffaf0; }
     .score { display: inline-flex; align-items: center; gap: 7px; padding: 8px 12px; border-radius: 12px; background: #f3e8ce; color: #806024; font-size: 13px; white-space: nowrap; }
     .score strong { font-size: 18px; }
+    .storage-notice { margin: 0 0 16px; padding: 12px 16px; background: #fff0d3; border-radius: 12px; color: #86551b; line-height: 1.7; }
+    .buff { margin: 0 0 18px; padding: 14px 19px; border: 2px solid #e7b946; border-radius: 18px; background: #fff2ba; color: #795012; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+    .buff strong { font-size: 19px; }
+    .energy { display: inline-flex; gap: 8px; font-size: 26px; }
+    .energy span { opacity: .22; }
+    .energy .charged { opacity: 1; }
     .score-value { position: relative; display: inline-block; }
     .score-burst { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
     .score-burst::before { content: ''; position: absolute; left: 50%; top: 50%; width: 34px; height: 34px; border: 2px solid var(--gold); border-radius: 50%; opacity: 0; transform: translate(-50%, -50%) scale(.45); }
@@ -34,6 +40,18 @@
     .score.earned .score-bonus { animation: score-gain 1s ease-out both; }
     .score.earned .score-spark { animation: score-spark .68s ease-out both; }
     .lesson { position: relative; overflow: hidden; display: grid; grid-template-columns: 260px 1fr; gap: 36px; padding: 31px 42px 32px; background: #fffdf7; border: 1px solid #e6e3d6; border-radius: 30px; box-shadow: 0 8px 32px #4b604b06; }
+    .lesson.boss { border: 3px solid #b58be0; background: radial-gradient(ellipse at 8% 10%, #f4dcff, transparent 65%), #fcf8ff; box-shadow: 0 6px 30px #794daf18; }
+    .boss .cat-scene::before { background: #eee0fa; }
+    .boss .word-reward { border-color: #ba90da; background: #f0ddff; color: #6c3e8d; box-shadow: 0 3px 0 #ddc5ef; }
+    .boss-mascot { position: relative; font-size: 108px; }
+    .image-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 10px; }
+    .image-option { min-width: 0; padding: 12px 6px; font-size: 64px; line-height: 1.5; border: 3px solid #dfd0eb; border-radius: 18px; background: #fffdfd; }
+    .image-option[aria-pressed="true"] { border-color: #8853b1; background: #ead5ff; box-shadow: 0 0 0 3px #d7b6ef66; }
+    .image-option.answer { border-color: var(--green); background: #e6f1df; }
+    .boss-action { border: 1px solid #d9c5e8; border-radius: 12px; padding: 11px 15px; color: #70458f; background: #f5edfc; font-size: 14px; }
+    .submit { border: 0; border-radius: 13px; padding: 12px 20px; color: white; background: #8554a8; font-weight: 700; }
+    .submit:disabled { opacity: .4; }
+    .slot.given { background: #eee0f8; color: #795290; border-color: #d8c2e7; }
     .friend { display: flex; flex-direction: column; align-items: center; justify-content: center; }
     .cat-scene { width: 234px; height: 216px; position: relative; display: grid; place-items: center; }
     .cat-scene::before { content: ''; width: 190px; height: 190px; border-radius: 50%; background: #f6edda; position: absolute; }
@@ -114,6 +132,7 @@
       .cat-scene::before { width: 155px; height: 155px; }
       .cat { width: 180px; }
       .slot { width: 58px; height: 66px; font-size: 32px; }
+      .image-option { font-size: 49px; }
       .keyboard-shell { padding: 18px 12px 22px; }
       .row { gap: 6px; }
       .key { height: 57px; font-size: 23px; }
@@ -159,9 +178,12 @@
       <span aria-hidden="true">★</span><span>积分 <span class="score-value"><strong id="score">0</strong><span class="score-burst" aria-hidden="true"><span class="score-bonus" id="score-bonus">+0.5</span><span class="score-spark">✦</span><span class="score-spark">✧</span><span class="score-spark">✧</span><span class="score-spark">✦</span></span></span></span>
     </div>
   </header>
+  <p class="storage-notice" id="storage-notice" role="alert" hidden></p>
+  <div class="buff" id="buff" role="status" aria-live="polite" hidden><strong id="buff-label">双倍能量 · 本题 ×2</strong><span class="energy" id="energy" aria-hidden="true"><span>⚡</span><span>⚡</span><span>⚡</span><span>⚡</span><span>⚡</span></span><span id="buff-count"></span></div>
   <section class="lesson" id="lesson" aria-labelledby="task-title">
     <div class="friend">
       <div class="cat-scene">
+        <span class="boss-mascot" id="boss-mascot" hidden aria-hidden="true">🐉</span>
         <svg class="cat" id="cat-art" viewBox="0 0 240 220" role="img" aria-label="一只等你帮忙拼单词的小猫">
           <ellipse cx="122" cy="198" rx="67" ry="9" fill="#dbcfb7" opacity=".6"/>
           <path d="M165 172 Q210 180 199 141 Q193 124 205 115" fill="none" stroke="#d6a566" stroke-width="17" stroke-linecap="round"/>
@@ -190,27 +212,34 @@
       <p class="reward-rule" id="reward-rule">1–3 个字母：0.5 分 · 4–6 个：1 分 · 7 个及以上：2 分（空格不计）</p>
       <p class="instruction" id="instruction">猫的英文是 cat。听一听，再按顺序找字母。</p>
       <div class="slots" id="slots" role="group" aria-label="单词拼写进度"></div>
+      <div class="image-options" id="image-options" role="group" aria-label="选择听到的图案" hidden></div>
       <p class="progress" id="progress">已找到 0 / 3 个字母</p>
       <div class="actions">
         <button class="listen" id="listen" type="button" aria-label="再听一次英文单词、中文释义和字母拼写"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M11 4 5 9H2v6h3l6 5Z"/><path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></svg>再听一次</button>
         <span class="audio-state" id="audio-state">听一听，也可以直接开始</span>
+        <button class="submit" id="submit" type="button" hidden disabled>我答好了</button>
+        <button class="boss-action" id="erase" type="button" hidden>⌫ 改一个字母</button>
+        <button class="boss-action" id="answer" type="button" hidden>看看答案</button>
+        <button class="boss-action" id="skip" type="button" hidden>下次再来</button>
+        <button class="boss-action" id="audio-continue" type="button" hidden>声音没播放，继续普通题</button>
       </div>
       <p class="feedback" id="feedback" role="status" aria-live="polite">从第一个字母开始，慢慢来。</p>
-      <div class="completion" id="completion" hidden><p id="completion-message">拼对啦！即将认识下一个单词。</p><button class="next" id="next" type="button">下一个单词 →</button></div>
+      <div class="completion" id="completion" hidden><p id="completion-message">拼对啦！即将认识下一个单词。</p><button class="next" id="next" type="button">下一个单词 →</button> <button class="boss-action" id="practice" type="button" hidden>跟着拼一遍</button></div>
     </div>
   </section>
-  <section class="keyboard-area" aria-labelledby="keyboard-title">
+  <section class="keyboard-area" id="keyboard-area" aria-labelledby="keyboard-title">
     <div class="keyboard-heading">
       <h2 id="keyboard-title">找找亮着的字母</h2>
       <p>点击屏幕 · 或敲电脑键盘</p>
     </div>
     <div class="keyboard-shell" id="keyboard"><button class="key shift-key" id="letter-case" type="button" aria-pressed="true" aria-label="使用大写字母" aria-controls="slots keyboard" title="点击锁定大写，再点一次切回小写"><span aria-hidden="true">⇧ Shift</span><span class="shift-state" id="shift-state" aria-hidden="true">大写</span></button></div>
-    <div class="keyboard-note"><span><span class="dot" aria-hidden="true"></span>亮着的字母都可以试一试，按错也没关系。</span><span>轻轻按一下，长按不会重复输入。</span></div>
+    <div class="keyboard-note"><span id="keyboard-tip"><span class="dot" aria-hidden="true"></span>亮着的字母都可以试一试，按错也没关系。</span><span>轻轻按一下，长按不会重复输入。</span></div>
   </section>
   <p class="audio-notice" id="audio-notice" role="status"></p>
   <noscript><p>请启用 JavaScript，开始单词小冒险。</p></noscript>
 </main>
 <script src="word-adventure-words.js"></script>
+<script src="word-adventure-game.js"></script>
 <script>
 (() => {
   'use strict';
@@ -229,6 +258,7 @@
 
   // 单词只保存内容；干扰字母按不同字母数计算，数量最多为剩余可选字母数。
   const WORD_POOL = window.WORD_ADVENTURE_WORDS;
+  const game = window.WORD_ADVENTURE_GAME;
   const NEXT_WORD_DELAY = 1000;
   const HOVER_DELAY = 240;
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -238,6 +268,8 @@
   const supported = !!synth && typeof window.SpeechSynthesisUtterance === 'function';
   const buttons = new Map(), held = new Set(), flashTimers = new Map();
   let currentWord, position = 0, complete = false, choices = new Set();
+  let currentTask = null, input = '', selectedEmoji = null, selectedOption = -1;
+  let heardTarget = false, audioFailed = false, practiceMode = false;
   // 只切换显示形式，词库、按键匹配和朗读文本继续使用原始内容。
   let lowercaseLetters = false;
   let feedbackText = $('feedback').textContent, audioStateText = $('audio-state').textContent;
@@ -245,26 +277,73 @@
   let voices = [], audioRole = null, audioGeneration = 0, audioTimer = null, speechWatchdog = null;
   let activeUtterance = null, hoverTimer = null, needsGesture = false;
   let hoveredLetter = null, hoverReady = false;
-  const SCORE_STORAGE_KEY = 'word-adventure-score-v1';
-  function loadSavedScore() {
+  let progress = null, storageBlocked = false, effectsContext = null;
+  function storageNotice(message) {
+    $('storage-notice').textContent = message;
+    $('storage-notice').hidden = !message;
+  }
+  function loadProgress() {
+    let raw;
+    try { raw = window.localStorage.getItem(game.PROGRESS_KEY); }
+    catch (_) {
+      // 无法读取时不能冒险覆盖一份可能已有的真钱积分。
+      storageBlocked = true;
+      storageNotice('无法读取已保存的积分。请让家长检查浏览器设置后刷新，进度没有被改写。');
+      return;
+    }
+    if (raw !== null) {
+      try { progress = game.parseProgress(raw); }
+      catch (_) {
+        storageBlocked = true;
+        storageNotice('保存的进度无法读取，已暂停计分。请让家长检查原存档，页面会保留它。');
+      }
+      return;
+    }
     try {
-      const saved = window.localStorage.getItem(SCORE_STORAGE_KEY);
-      if (saved === null) return 0;
-      const value = Number(saved);
-      // 兼容旧版整数积分，同时允许以半分为单位保存的新积分。
-      return value >= 0 && Number.isSafeInteger(value * 2) ? value : 0;
-    } catch (_) { return 0; }
+      const legacy = window.localStorage.getItem(game.LEGACY_KEY);
+      const value = legacy === null ? 0 : Number(legacy);
+      progress = game.createProgress(value >= 0 && Number.isSafeInteger(value * 2) ? value : 0);
+    } catch (_) {
+      storageBlocked = true;
+      storageNotice('无法读取旧积分。请让家长检查后刷新，进度没有被改写。');
+      return;
+    }
+    saveProgress();
   }
-  function saveScore() {
-    try { window.localStorage.setItem(SCORE_STORAGE_KEY, String(score)); } catch (_) {}
+  function saveProgress() {
+    if (storageBlocked) return;
+    try {
+      window.localStorage.setItem(game.PROGRESS_KEY, JSON.stringify(progress));
+      storageNotice('');
+    } catch (_) { storageNotice('这次进度没能保存，请保持页面打开。'); }
   }
-  function wordReward(letterCount) {
-    // 按需要输入的字母数分成三档，短语中的空格不计入。
-    return letterCount <= 3 ? .5 : letterCount <= 6 ? 1 : 2;
+  function isBoss() { return currentTask && currentTask.kind !== 'normal'; }
+  function renderBuff() {
+    $('score').textContent = progress.score;
+    $('buff').hidden = progress.buffRemaining === 0;
+    $('buff-label').textContent = complete || isBoss() ? '双倍能量已就绪' : '双倍能量 · 本题 ×2';
+    $('buff-count').textContent = '还剩 ' + progress.buffRemaining + ' 道普通题';
+    [...$('energy').children].forEach((mark, index) => mark.classList.toggle('charged', index < progress.buffRemaining));
   }
-  // 积分跨刷新和重新打开页面保留。
-  let score = loadSavedScore(), effectsContext = null;
-  $('score').textContent = score;
+  function settle(outcome) {
+    let result;
+    try {
+      result = game.settle(progress, {
+        wordId: currentWord.id, kind: currentTask.kind, outcome, endedAt: Date.now(),
+        letterCount: currentWord.letters.length,
+        ...(currentTask.kind === 'partial' ? { missingCount: currentTask.missingPositions.length } : {})
+      });
+    } catch (_) {
+      storageBlocked = true; complete = true;
+      stopAudio();
+      $('lesson').hidden = true; $('keyboard-area').hidden = true;
+      storageNotice('积分无法安全结算，已暂停游戏。请让家长检查原存档，进度没有被改写。');
+      return null;
+    }
+    progress = result.progress;
+    saveProgress(); renderBuff();
+    return result;
+  }
   const effectNotes = new Set();
 
   function prepareEffects() {
@@ -335,13 +414,20 @@
       throw new Error('词条需要英文大写单词或短语、中文含义和有效的图示配置。');
     }
   }
-  if (!Array.isArray(WORD_POOL) || !WORD_POOL.length) {
-    $('audio-notice').textContent = '单词表未能加载。请将页面与词表文件放在同一文件夹，再刷新页面。';
+  if (!game || !Array.isArray(WORD_POOL) || !WORD_POOL.length) {
+    $('audio-notice').textContent = '游戏文件未能加载。请将页面、词表和游戏规则文件放在同一文件夹，再刷新页面。';
     $('listen').disabled = true;
     $('letter-case').disabled = true;
     return;
   }
   WORD_POOL.forEach(validateWord);
+  loadProgress();
+  if (storageBlocked) {
+    $('listen').disabled = true; $('letter-case').disabled = true;
+    $('lesson').hidden = true; $('keyboard-area').hidden = true;
+    return;
+  }
+  renderBuff();
 
   function drawWord() {
     // 每次从完整单词池等概率抽取，不移除已抽取的词，也允许连续抽到同一个词。
@@ -350,10 +436,10 @@
 
   function scheduleNextWord() {
     clearTimeout(nextWordTimer); nextWordTimer = null;
-    if (!complete || document.hidden || audioRole === 'celebration') return;
+    if (!complete || isBoss() || document.hidden || audioRole === 'celebration') return;
     nextWordTimer = setTimeout(() => {
       nextWordTimer = null;
-      if (complete && !document.hidden) startWord();
+      if (complete && !isBoss() && !document.hidden) startWord();
     }, NEXT_WORD_DELAY);
   }
 
@@ -401,7 +487,9 @@
     clearListening();
     if (supported) synth.cancel();
     $('listen').removeAttribute('aria-busy');
-    renderAudioState(complete ? '你已经拼出整个单词啦' : '随时可以按字母，不用等提示');
+    if (complete) $('next').disabled = false;
+    renderAudioState(isBoss() ? (complete ? '挑战已结束' : heardTarget ? '可以作答，也可以再听一次' : '先听完整单词，再提交答案')
+      : complete ? '你已经拼出整个单词啦' : '随时可以按字母，不用等提示');
   }
 
   // 语音独立于输入进度。只有当前播放批次可以更新界面，取消后的回调不会干扰新输入。
@@ -414,6 +502,7 @@
     audioRole = role;
     if (role === 'celebration') {
       clearTimeout(nextWordTimer); nextWordTimer = null;
+      $('next').disabled = true;
     }
     if (role === 'prompt') $('listen').setAttribute('aria-busy', 'true');
     function finish() {
@@ -421,14 +510,23 @@
       clearTimeout(speechWatchdog); clearTimeout(audioTimer);
       activeUtterance = null; audioRole = null; clearListening();
       $('listen').removeAttribute('aria-busy');
-      renderAudioState(complete ? '你已经拼出整个单词啦' : '轮到你啦，找找下一个字母');
+      if (complete) $('next').disabled = false;
+      renderAudioState(isBoss() ? (complete ? '挑战已结束' : heardTarget ? '轮到你啦，想好再提交' : '点击再听一次，听完才能提交')
+        : complete ? '你已经拼出整个单词啦' : '轮到你啦，找找下一个字母');
       if (complete) scheduleNextWord();
       else playHoveredLetter();
     }
     function fail(error) {
       if (generation !== audioGeneration) return;
       clearHover(); stopAudio();
-      if (error === 'not-allowed') {
+      if (isBoss() && !complete) {
+        audioFailed = true;
+        if (error === 'not-allowed') needsGesture = true;
+        $('audio-notice').textContent = heardTarget
+          ? '这次声音没播放出来，仍可提交刚才听到的答案，也可以再听一次。'
+          : '这次声音没播放出来。点“再听一次”重试，或继续普通题。';
+        renderBossControls();
+      } else if (error === 'not-allowed') {
         needsGesture = true;
         $('audio-notice').textContent = '直接点击或按下一个字母，声音就会自动开始。';
       } else if (error === 'language-unavailable' || error === 'voice-unavailable') {
@@ -460,17 +558,25 @@
           audioTimer = setTimeout(() => run(index + 1), 380);
         } else fail(error);
       }
-      let settled = false;
+      let settled = false, started = false;
       speech.onstart = () => {
         if (generation !== audioGeneration || settled) return;
+        started = true;
         needsGesture = false; $('audio-notice').textContent = voiceNotice;
         clearListening();
         if (Number.isInteger(step.slot)) $('slots').children[step.slot]?.classList.add('listening');
-        renderAudioState((role === 'prompt' ? '听一听 · ' : '正在读 · ') + step.text);
+        renderAudioState(isBoss() && !complete && !practiceMode
+          ? (role === 'hover' ? '正在读这个按键' : '正在读 · 请仔细听')
+          : (role === 'prompt' ? '听一听 · ' : '正在读 · ') + step.text);
       };
       speech.onend = () => {
         if (generation !== audioGeneration || settled) return;
         settled = true; clearTimeout(speechWatchdog); clearListening();
+        if (step.target && started && isBoss() && !complete) {
+          heardTarget = true; audioFailed = false;
+          $('audio-notice').textContent = '';
+          renderBossControls();
+        }
         audioTimer = setTimeout(() => run(index + 1), step.letter ? 100 : 380);
       };
       speech.onerror = event => {
@@ -485,7 +591,14 @@
     else run(0);
   }
 
-  function playPrompt(startDelay = 0) {
+  function playPrompt(startDelay = 0, introduction = false) {
+    if (isBoss() && !complete && !practiceMode) {
+      playSequence([
+        ...(introduction ? [{ text: '稀有挑战！挑战成功，接下来五题双倍！', lang: 'zh-CN' }] : []),
+        { text: currentWord.speech, target: true }
+      ], 'prompt', startDelay);
+      return;
+    }
     const wordAndMeaning = [
       { text: currentWord.speech },
       { text: currentWord.meaning, lang: 'zh-CN' }
@@ -524,25 +637,116 @@
       button.textContent = displayLetters(letter);
       button.setAttribute('aria-label', '字母 ' + displayLetters(letter));
     });
-    $('instruction').textContent = GAME_OPTIONS.showSpelling
-      ? currentWord.meaning + '的英文是 ' + displayLetters(currentWord.display) + '。听一听，再按顺序找字母。'
-      : '听听“' + currentWord.meaning + '”的英文，再按顺序找字母。';
-    if (currentWord.word.includes(' ')) $('instruction').textContent += '词间空格已分隔，只需输入字母。';
+    if (isBoss() && !practiceMode) {
+      $('instruction').textContent = complete ? displayLetters(currentWord.word) + '：' + currentWord.meaning
+        : currentTask.kind === 'image' ? '听英文，选出它的图案。选好了再提交。'
+        : currentTask.kind === 'partial' ? '听听“' + currentWord.meaning + '”的英文，只补上空着的字母。'
+        : '听听“' + currentWord.meaning + '”的英文，试着自己拼出来。';
+    } else {
+      $('instruction').textContent = practiceMode || GAME_OPTIONS.showSpelling
+        ? currentWord.meaning + '的英文是 ' + displayLetters(currentWord.display) + '。听一听，再按顺序找字母。'
+        : '听听“' + currentWord.meaning + '”的英文，再按顺序找字母。';
+      if (currentWord.word.includes(' ')) $('instruction').textContent += '词间空格已分隔，只需输入字母。';
+    }
     renderProgress(); renderFeedback(feedbackText); renderAudioState(audioStateText);
   }
 
   function renderProgress() {
+    if (isBoss() && !practiceMode) {
+      if (currentTask.kind === 'image') {
+        $('progress').textContent = complete ? '挑战已结束' : selectedEmoji === null ? '选一个图案，再点“我答好了”' : '已选好，想好了再提交';
+      } else {
+        const missing = currentTask.kind === 'partial' ? currentTask.missingPositions : [...currentWord.letters].map((_, i) => i);
+        [...$('slots').children].forEach((slot, index) => {
+          const inputIndex = missing.indexOf(index);
+          const given = inputIndex < 0;
+          const typed = given ? '' : input[inputIndex] || '';
+          slot.textContent = complete || given ? displayLetters(currentWord.letters[index]) : typed ? displayLetters(typed) : '·';
+          slot.classList.toggle('given', given && !complete);
+          slot.classList.toggle('filled', complete || !!typed);
+          const active = inputIndex === input.length && !complete;
+          slot.classList.toggle('current', active);
+          if (active) slot.setAttribute('aria-current', 'step'); else slot.removeAttribute('aria-current');
+          slot.setAttribute('aria-label', '第 ' + (index + 1) + ' 个字母，' +
+            (complete || given ? '已显示 ' + displayLetters(currentWord.letters[index]) : typed ? '已输入 ' + displayLetters(typed) : '待填写'));
+        });
+        $('progress').textContent = complete ? '挑战已结束' : '已填写 ' + input.length + ' / ' + missing.length + ' 个空格 · 可以退格修改';
+        $('slots').setAttribute('aria-label', '拼写挑战，共 ' + currentWord.letters.length + ' 格');
+      }
+      renderBossControls();
+      return;
+    }
     [...$('slots').children].forEach((slot, index) => {
       const filled = index < position;
-      slot.textContent = filled || GAME_OPTIONS.showSpelling ? displayLetters(currentWord.letters[index]) : '·';
+      slot.textContent = filled || practiceMode || GAME_OPTIONS.showSpelling ? displayLetters(currentWord.letters[index]) : '·';
+      slot.classList.remove('given');
       slot.classList.toggle('filled', filled);
-      slot.classList.toggle('current', index === position && !complete);
-      if (index === position && !complete) slot.setAttribute('aria-current', 'step');
+      slot.classList.toggle('current', index === position && (!complete || practiceMode));
+      if (index === position && (!complete || practiceMode)) slot.setAttribute('aria-current', 'step');
       else slot.removeAttribute('aria-current');
       slot.setAttribute('aria-label', '第 ' + (index + 1) + ' 个字母' + (filled ? '，已拼好 ' + displayLetters(currentWord.letters[index]) : '，待填写'));
     });
     $('progress').textContent = '已找到 ' + position + ' / ' + currentWord.letters.length + ' 个字母';
     $('slots').setAttribute('aria-label', '单词拼写进度，已找到 ' + position + ' 个，共 ' + currentWord.letters.length + ' 个字母');
+  }
+
+  function renderBossControls() {
+    if (!isBoss()) return;
+    const ready = currentTask.kind === 'image' ? selectedEmoji !== null
+      : input.length === (currentTask.kind === 'partial' ? currentTask.missingPositions.length : currentWord.letters.length);
+    $('submit').disabled = complete || !heardTarget || !ready;
+    $('erase').disabled = complete || input.length === 0;
+    $('audio-continue').hidden = complete || heardTarget || !audioFailed;
+    $('answer').hidden = complete; $('skip').hidden = complete;
+    $('submit').hidden = complete; $('erase').hidden = complete || currentTask.kind === 'image';
+  }
+
+  function finishBoss(outcome) {
+    if (complete || !isBoss()) return;
+    complete = true; practiceMode = false;
+    clearHover(); stopAudio();
+    const result = settle(outcome);
+    if (!result) return;
+    buttons.forEach(button => { button.disabled = true; });
+    $('lesson').classList.toggle('complete', outcome === 'correct');
+    $('task-title').textContent = outcome === 'correct' ? '挑战成功！双倍能量到手！'
+      : outcome === 'wrong' ? '差一点！我们一起记住它' : outcome === 'assisted' ? '一起看看答案吧'
+      : outcome === 'unavailable' ? '声音休息了，继续小冒险' : '下次再挑战！';
+    const messages = {
+      correct: '获得五颗双倍能量！接下来 5 道普通题，每题积分 ×2。',
+      wrong: '这次没拼对也没关系。记住答案，下次再挑战！',
+      assisted: '这次一起学习答案，下次试着自己回忆。',
+      skipped: '已跳过这次挑战，普通题一样能攒积分。',
+      unavailable: '这次声音没能播放，继续普通题，不算答错。'
+    };
+    renderFeedback(messages[outcome]);
+    $('completion-message').textContent = messages[outcome];
+    $('completion').hidden = false;
+    $('next').textContent = outcome === 'correct' ? '带着双倍能量出发 →' : '继续普通题 →';
+    $('practice').hidden = currentTask.kind === 'image' || !['wrong', 'assisted'].includes(outcome);
+    $('friend-caption').textContent = outcome === 'correct' ? '五颗能量，五次双倍！' : '每次挑战都是新的练习';
+    if (currentTask.kind === 'image') {
+      [...$('image-options').children].forEach(button => {
+        button.disabled = true;
+        button.classList.toggle('answer', button.dataset.emoji === currentWord.illustration);
+      });
+    }
+    renderLetterCase(); renderBuff();
+    const soundDuration = outcome === 'correct' ? playVictorySound() : 0;
+    playSequence([
+      ...(outcome === 'correct' ? [{ text: '挑战成功，接下来五题双倍！', lang: 'zh-CN' }] : []),
+      { text: currentWord.speech }, { text: currentWord.meaning, lang: 'zh-CN' }
+    ], 'celebration', soundDuration);
+  }
+
+  function submitBoss() {
+    if (!isBoss() || complete || $('submit').disabled) return;
+    finishBoss(game.isBossAnswerCorrect(currentTask, currentTask.kind === 'image' ? selectedEmoji : input) ? 'correct' : 'wrong');
+  }
+
+  function eraseLetter() {
+    if (!isBoss() || complete || currentTask.kind === 'image' || !input.length) return;
+    input = input.slice(0, -1); clearHover(); renderProgress();
   }
 
   function flash(letter, className) {
@@ -556,8 +760,17 @@
   }
 
   function inputLetter(letter) {
-    if (complete) return;
+    if (storageBlocked || (complete && !practiceMode)) return;
     clearHover();
+    if (isBoss() && !practiceMode) {
+      if (currentTask.kind === 'image') return;
+      const count = currentTask.kind === 'partial' ? currentTask.missingPositions.length : currentWord.letters.length;
+      if (input.length < count && alphabet.includes(letter)) {
+        input += letter; renderProgress();
+        renderFeedback('想好了再提交，按退格可以修改。');
+      }
+      return;
+    }
     if (!choices.has(letter)) {
       stopAudio();
       renderFeedback('找找亮着的字母，它们都可以试一试。');
@@ -575,19 +788,27 @@
     }
     position++;
     flash(letter, 'correct');
-    complete = position === currentWord.letters.length;
     renderProgress();
-    if (complete) {
-      score += currentWord.points;
-      $('score').textContent = score;
-      $('score-bonus').textContent = '+' + currentWord.points;
-      saveScore();
+    if (position === currentWord.letters.length) {
+      if (practiceMode) {
+        practiceMode = false; buttons.forEach(button => { button.disabled = true; });
+        renderLetterCase();
+        renderFeedback('跟练完成！再遇见它时，试试自己回忆。');
+        playPrompt();
+        return;
+      }
+      complete = true;
+      const result = settle('correct');
+      if (!result) return;
+      renderProgress();
+      $('score-bonus').textContent = '+' + result.reward;
       $('score-badge').classList.add('earned');
       $('lesson').classList.add('complete');
       $('task-title').textContent = '太棒啦，你拼出来了！';
       renderFeedback(currentWord.word + '，就是“' + currentWord.meaning + '”！');
       $('friend-caption').textContent = '又认识了一个英文单词！';
-      $('completion-message').textContent = '拼对 +' + currentWord.points + ' 分！你已经获得 ' + score + ' 分啦。即将认识下一个单词。';
+      $('completion-message').textContent = '拼对 +' + result.reward + ' 分！你已经获得 ' + progress.score + ' 分啦。'
+        + (result.buffEnded ? '双倍能量用完啦！' : '') + '即将认识下一个单词。';
       $('completion').hidden = false;
       buttons.forEach(button => { button.disabled = true; });
       const soundDuration = playVictorySound();
@@ -621,30 +842,54 @@
   function clearHeld() {
     held.clear(); clearHover(); buttons.forEach(button => button.classList.remove('pressed'));
   }
-  function startWord() {
+  function renderArt(hideTarget) {
+    $('boss-mascot').hidden = !hideTarget;
+    $('cat-art').style.display = !hideTarget && currentWord.illustration === '🐱' ? '' : 'none';
+    $('emoji-art').hidden = hideTarget || !currentWord.illustration || currentWord.illustration === '🐱';
+    $('emoji-art').textContent = hideTarget ? '' : currentWord.illustration;
+    $('emoji-art').setAttribute('role', 'img');
+    $('emoji-art').setAttribute('aria-label', hideTarget ? '图案' : currentWord.meaning);
+    $('emoji-art').setAttribute('aria-hidden', String($('emoji-art').hidden));
+    $('meaning-art').hidden = hideTarget || !!currentWord.illustration;
+    $('meaning-art-label').textContent = hideTarget ? '' : currentWord.meaning;
+  }
+
+  function startWord(allowBoss = true) {
+    if (storageBlocked) return;
     clearTimeout(nextWordTimer); nextWordTimer = null;
     stopAudio(); stopEffects(); clearHeld();
     flashTimers.forEach(timer => clearTimeout(timer)); flashTimers.clear();
-    const config = drawWord();
+    currentTask = allowBoss && progress.buffRemaining === 0 && progress.untilBoss === 0
+      ? game.createBoss(progress.history, WORD_POOL) : null;
+    if (!currentTask) currentTask = { kind: 'normal', word: drawWord(), missingPositions: [], options: [] };
+    const config = currentTask.word;
     currentWord = { ...config, letters: config.word.replace(/ /g, ''), display: config.display || config.word.toLowerCase(), speech: config.speech || config.display || config.word.toLowerCase() };
-    currentWord.points = wordReward(currentWord.letters.length);
-    position = 0; complete = false;
-    choices = chooseLetters(currentWord);
+    currentWord.points = game.wordReward(currentWord.letters.length) * (progress.buffRemaining > 0 ? 2 : 1);
+    position = 0; complete = false; input = ''; selectedEmoji = null; selectedOption = -1;
+    heardTarget = false; audioFailed = false; practiceMode = false;
+    choices = isBoss() ? new Set(alphabet) : chooseLetters(currentWord);
     $('lesson').classList.remove('complete'); $('completion').hidden = true;
+    $('lesson').classList.toggle('boss', isBoss());
     $('score-badge').classList.remove('earned');
-    $('task-title').textContent = '一起拼出“' + currentWord.meaning + '”的英文';
-    $('word-points').textContent = currentWord.points + ' 分';
-    $('word-reward').setAttribute('aria-label', '本词共 ' + currentWord.letters.length + ' 个字母，拼对奖励 ' + currentWord.points + ' 分');
-    $('friend-caption').textContent = '一个小单词，等你来认识';
-    $('cat-art').style.display = currentWord.illustration === '🐱' ? '' : 'none';
-    $('emoji-art').hidden = !currentWord.illustration || currentWord.illustration === '🐱';
-    $('emoji-art').textContent = currentWord.illustration;
-    $('emoji-art').setAttribute('role', 'img');
-    $('emoji-art').setAttribute('aria-label', currentWord.meaning);
-    $('emoji-art').setAttribute('aria-hidden', String($('emoji-art').hidden));
-    $('meaning-art').hidden = !!currentWord.illustration;
-    $('meaning-art-label').textContent = currentWord.meaning;
+    $('task-title').textContent = isBoss() ? '🐉 稀有挑战 · ' + ({image:'听音找图', partial:'补上字母', recall:'自己拼单词'}[currentTask.kind])
+      : '一起拼出“' + currentWord.meaning + '”的英文';
+    $('word-points').textContent = isBoss() ? '5 次 ×2' : currentWord.points + ' 分';
+    $('word-reward').querySelector('.reward-label').textContent = isBoss() ? '挑战成功' : '本词奖励';
+    $('word-reward').setAttribute('aria-label', isBoss() ? '挑战成功后，接下来五道普通题奖励翻倍'
+      : '本词共 ' + currentWord.letters.length + ' 个字母，拼对奖励 ' + currentWord.points + ' 分');
+    $('reward-rule').hidden = isBoss();
+    $('friend-caption').textContent = isBoss() ? '记住的本领，变成双倍能量！' : '一个小单词，等你来认识';
+    renderArt(currentTask.kind === 'image');
+    $('listen').setAttribute('aria-label', isBoss() ? '再听一次完整英文单词' : '再听一次英文单词、中文释义和字母拼写');
+    $('submit').hidden = !isBoss(); $('erase').hidden = !isBoss() || currentTask.kind === 'image';
+    $('answer').hidden = !isBoss(); $('skip').hidden = !isBoss();
+    $('audio-continue').hidden = true; $('practice').hidden = true;
+    $('next').textContent = '下一个单词 →';
+    $('keyboard-area').hidden = currentTask.kind === 'image';
+    $('keyboard-title').textContent = isBoss() ? '自己选字母，想好了再提交' : '找找亮着的字母';
+    $('keyboard-tip').textContent = isBoss() ? '26 个字母都可以输入，提交前可以退格修改。' : '亮着的字母都可以试一试，按错也没关系。';
     $('slots').replaceChildren();
+    $('slots').hidden = currentTask.kind === 'image';
     $('slots').classList.toggle('long-word', currentWord.letters.length > 8);
     let wordStart = false;
     for (const letter of currentWord.word) {
@@ -652,13 +897,51 @@
       const slot = document.createElement('div'); slot.className = 'slot' + (wordStart ? ' word-start' : '');
       wordStart = false; $('slots').appendChild(slot);
     }
+    $('image-options').replaceChildren();
+    $('image-options').hidden = currentTask.kind !== 'image';
+    if (currentTask.kind === 'image') {
+      currentTask.options.forEach((option, index) => {
+        const button = document.createElement('button');
+        button.type = 'button'; button.className = 'image-option';
+        button.dataset.emoji = option.emoji;
+        button.setAttribute('aria-label', option.label); button.setAttribute('aria-pressed', 'false');
+        const picture = document.createElement('span');
+        picture.textContent = option.emoji; picture.setAttribute('aria-hidden', 'true');
+        button.appendChild(picture);
+        button.addEventListener('click', () => {
+          if (complete) return;
+          selectedEmoji = option.emoji; selectedOption = index;
+          [...$('image-options').children].forEach((item, i) => item.setAttribute('aria-pressed', String(i === selectedOption)));
+          renderProgress();
+        });
+        $('image-options').appendChild(button);
+      });
+    }
     buttons.forEach((button, letter) => {
       button.className = 'key' + (choices.has(letter) ? ' available' : '');
       button.disabled = !choices.has(letter);
     });
-    renderFeedback('从第一个字母开始，慢慢来。');
-    renderLetterCase(); playPrompt();
-    if (!supported) $('audio-notice').textContent = '这个浏览器暂不支持朗读，可以先看着字母拼写。';
+    renderFeedback(isBoss() ? '先听一听，再自己试试。可以重听，也可以下次再挑战。' : '从第一个字母开始，慢慢来。');
+    $('audio-notice').textContent = '';
+    renderLetterCase(); renderBuff();
+    const entryDuration = isBoss() ? playVictorySound() : 0;
+    playPrompt(entryDuration, isBoss());
+    if (!supported) {
+      if (isBoss()) finishBoss('unavailable');
+      else $('audio-notice').textContent = '这个浏览器暂不支持朗读，可以先看着字母拼写。';
+    }
+  }
+
+  function startPractice() {
+    if (!isBoss() || !complete || $('practice').hidden) return;
+    stopAudio(); clearHeld();
+    practiceMode = true; position = 0; choices = chooseLetters(currentWord);
+    $('practice').hidden = true; $('task-title').textContent = '一起跟着拼一遍';
+    $('keyboard-title').textContent = '跟着字母，练习一遍';
+    $('keyboard-tip').textContent = '这次是跟练，完成后继续普通题。';
+    buttons.forEach((button, letter) => { button.disabled = !choices.has(letter); });
+    renderLetterCase(); renderFeedback('看着字母，按顺序拼一遍。');
+    playPrompt();
   }
 
   function eventLetter(event) {
@@ -671,8 +954,15 @@
     if (event.repeat && (event.key === 'Enter' || event.key === ' ') && event.target instanceof Element && event.target.closest('button')) {
       event.preventDefault(); return;
     }
+    if (isBoss() && !complete && event.key === 'Backspace') {
+      event.preventDefault(); if (!event.repeat) eraseLetter(); return;
+    }
+    const focusedButton = event.target instanceof Element ? event.target.closest('button') : null;
+    if (isBoss() && !complete && event.key === 'Enter' && (!focusedButton || focusedButton.matches('.key:not(.shift-key),#submit'))) {
+      event.preventDefault(); if (!event.repeat) submitBoss(); return;
+    }
     const letter = eventLetter(event);
-    if (!letter || complete) return;
+    if (!letter || (complete && !practiceMode)) return;
     event.preventDefault();
     if (event.repeat || held.has(letter)) return;
     held.add(letter);
@@ -694,7 +984,13 @@
     renderLetterCase();
   });
   $('next').addEventListener('click', () => { if (complete) startWord(); });
-  window.addEventListener('blur', clearHeld);
+  $('submit').addEventListener('click', submitBoss);
+  $('erase').addEventListener('click', eraseLetter);
+  $('answer').addEventListener('click', () => finishBoss('assisted'));
+  $('skip').addEventListener('click', () => finishBoss('skipped'));
+  $('audio-continue').addEventListener('click', () => { if (!heardTarget && audioFailed) finishBoss('unavailable'); });
+  $('practice').addEventListener('click', startPractice);
+  window.addEventListener('blur', () => { clearHeld(); if (isBoss()) stopAudio(); });
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       clearTimeout(nextWordTimer); nextWordTimer = null;
@@ -706,7 +1002,7 @@
     clearHeld(); stopAudio(); stopEffects();
   });
   if (supported) { refreshVoices(); synth.addEventListener('voiceschanged', refreshVoices); }
-  startWord();
+  startWord(false);
 })();
 </script>
 </body>
